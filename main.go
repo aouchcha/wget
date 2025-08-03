@@ -93,6 +93,30 @@ func main() {
 		}
 		i += 1
 	}
+	if len(args) >= 2 && args[0] == "-B" {
+	HandleBackgroundDownload(args[1])
+	return
+}
+for i := 0; i < len(args); i++ {
+	if strings.HasPrefix(args[i], "-i") {
+		var filePath string
+		if strings.Contains(args[i], "=") {
+			parts := strings.SplitN(args[i], "=", 2)
+			if len(parts) != 2 || parts[1] == "" {
+				fmt.Fprintln(os.Stderr, "Invalid -i flag format")
+				return
+			}
+			filePath = parts[1]
+		} else if i+1 < len(args) {
+			filePath = args[i+1]
+		} else {
+			fmt.Fprintln(os.Stderr, "Missing file after -i flag")
+			return
+		}
+		HandleMultipleDownloads(filePath)
+		return
+	}
+}
 	if components.Link == "" {
 		fmt.Fprintln(os.Stderr, "you don't provide the program with link to download from it")
 		return
