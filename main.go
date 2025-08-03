@@ -121,7 +121,12 @@ for i := 0; i < len(args); i++ {
 		fmt.Fprintln(os.Stderr, "you don't provide the program with link to download from it")
 		return
 	}
-	fmt.Println(components)
+	if components.Link != "" {
+	err := DownloadFileWithInfo(components.Link)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Download failed:", err)
+	}
+}
 }
 
 func CheckValidFlag(f string, flags []string) bool {
