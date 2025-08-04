@@ -4,17 +4,25 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
-func HandleBackgroundDownload(link string) {
-	// Use current executable to fork a new process
+func HandleBackgroundDownload(args []string) {
 	exe, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to locate binary:", err)
 		return
 	}
 
-	cmd := exec.Command(exe, link)
+	// Remove the -B flag so the child doesn’t re-trigger background logic
+	cleanArgs := []string{}
+	for _, arg := range args {
+		if arg != "-B" && !strings.HasPrefix(arg, "-B=") {
+			cleanArgs = append(cleanArgs, arg)
+		}
+	}
+
+	cmd := exec.Command(exe, cleanArgs...)
 	logFile, err := os.Create("wget-log")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Failed to create wget-log:", err)
@@ -29,5 +37,6 @@ func HandleBackgroundDownload(link string) {
 		return
 	}
 
+	fmt.Printf("Continuing in background, pid %d.\n", cmd.Process.Pid)
 	fmt.Println(`Output will be written to "wget-log".`)
 }

@@ -20,6 +20,14 @@ type FlagsComponents struct {
 	Background bool
 	Convert    bool
 }
+func contains(slice []string, item string) bool {
+	for _, s := range slice {
+		if s == item {
+			return true
+		}
+	}
+	return false
+}
 
 func main() {
 	args := os.Args[1:]
@@ -93,10 +101,11 @@ func main() {
 		}
 		i += 1
 	}
-	if len(args) >= 2 && args[0] == "-B" {
-	HandleBackgroundDownload(args[1])
+	if contains(args, "-B") {
+	HandleBackgroundDownload(args)
 	return
 }
+
 for i := 0; i < len(args); i++ {
 	if strings.HasPrefix(args[i], "-i") {
 		var filePath string
