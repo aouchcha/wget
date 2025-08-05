@@ -11,12 +11,6 @@ import (
 
 func CheckValidFlag(f string, flags []string) bool {
 	return slices.Contains(flags, f)
-	// for _, flag := range flags {
-	// 	if flag == f {
-	// 		return true
-	// 	}
-	// }
-	// return false
 }
 
 func CatchOutputFile(args []string, comp *FlagsComponents, flags []string) (bool, error) {
@@ -80,6 +74,7 @@ func CatchPath(args []string, comp *FlagsComponents, flags []string) (bool, erro
 		return false, nil
 
 	} else {
+		fmt.Println("haaaaaaaani")
 		if !CheckValidFlag(args[0], flags) {
 			return false, errors.New("invalid flag -P")
 		}
@@ -102,14 +97,8 @@ func CatchRate(args []string, comp *FlagsComponents, flags []string) (bool, erro
 		if len(sli) != 2 || sli[1] == "" {
 			return false, errors.New("missing the rate while presence of the --rate-limit flag")
 		}
-		rate := sli[1]
+		comp.RateLimite = sli[1]
 
-		holder, err := strconv.Atoi(rate[:len(rate)-1])
-		// fmt.Println(holder)
-		if err != nil {
-			return false, errors.New("the rate isn't a valid number")
-		}
-		comp.RateLimite = holder
 		return false, nil
 
 	} else {
@@ -119,13 +108,7 @@ func CatchRate(args []string, comp *FlagsComponents, flags []string) (bool, erro
 		if args[1] == "" {
 			return false, errors.New("missing the rate while presence of the --rate-limit flag")
 		}
-		rate := args[1]
-		holder, err := strconv.Atoi(rate[:len(rate)-1])
-		// fmt.Println(holder)
-		if err != nil {
-			return false, errors.New("the rate isn't a valid number")
-		}
-		comp.RateLimite = holder
+		comp.RateLimite = args[1]
 		return true, nil
 	}
 }
@@ -194,7 +177,7 @@ func CatchTheRExcludedFolders(args []string, comp *FlagsComponents, flags []stri
 
 func (c *FlagsComponents) Validate() error {
 	// Check for conflicting flags
-	if c.InputFile != "" && c.Link != "" {
+	if c.InputFile != "" && len(c.Links) != 0 {
 		return fmt.Errorf("cannot use both -i (input file) and direct URL")
 	}
 
@@ -212,7 +195,7 @@ func (c *FlagsComponents) Validate() error {
 	}
 
 	// Require either URL or input file
-	if c.Link == "" && c.InputFile == "" {
+	if len(c.Links) == 0 && c.InputFile == "" {
 		return fmt.Errorf("must provide either URL or -i input file")
 	}
 
@@ -225,4 +208,50 @@ func logOrPrint(logger *log.Logger, background bool, message string) {
 	} else {
 		fmt.Println(message)
 	}
+}
+
+func parseRateLimit(rateLimitStr string) (int64, error) {
+	if rateLimitStr == "" {
+		return 0, nil
+	}
+
+	// Remove whitespace and convert to lowercase
+	rateLimitStr = strings.ToLower(strings.TrimSpace(rateLimitStr))
+
+	// Default multiplier (bytes)
+	var multiplier int64 = 1
+
+	// Check for suffix and remove it
+	if strings.HasSuffix(rateLimitStr, "k") {
+		multiplier = 1024
+		rateLimitStr = rateLimitStr[:len(rateLimitStr)-1]
+	} else if strings.HasSuffix(rateLimitStr, "m") {
+		multiplier = 1024 * 1024
+		rateLimitStr = rateLimitStr[:len(rateLimitStr)-1]
+	}
+
+	// Parse the numeric part
+	value, err := strconv.ParseInt(rateLimitStr, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid rate limit format: %s", rateLimitStr)
+	}
+
+	return value * multiplier, nil
+}
+
+
+func formatSpeed(speedMBps float64) string {
+	// Cap extremely high speeds to avoid scientific notation
+	if speedMBps > 999.99 {
+		speedMBps = 999.99
+	}
+	if speedMBps < 0.001 {
+		speedMBps = 0.001
+	}
+
+	// Fixed logic: show KB/s when speed is LESS than 1 MB/s
+	if speedMBps < 1 {
+		return fmt.Sprintf("%.0f KB/s", speedMBps*1024)
+	}
+	return fmt.Sprintf("%.2f MB/s", speedMBps)
 }

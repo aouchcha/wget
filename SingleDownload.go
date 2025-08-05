@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -14,24 +13,29 @@ import (
 	"time"
 )
 
-
-func (c *FlagsComponents) DownloadOneSource(logger *log.Logger) error {
-	filename := c.OutputFile
-	Overide := true
-	if c.OutputFile == "" {
-		Overide = false
-		filename = GetOutputFromUrl(c.Link)
-	}
-
-	if c.PathFile != "" && c.OutputFile == "" {
-		filename = filepath.Join(c.PathFile, filename)
-		if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
-			return fmt.Errorf("failed to create directory: %v", err)
+func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
+	for _, link := range c.Links {
+		filename := c.OutputFile
+		Overide := true
+		if c.OutputFile == "" {
+			Overide = false
+			filename = GetOutputFromUrl(link)
 		}
-	}
-	err := Download(c, filename, logger, Overide)
-	if err != nil {
-		return err
+
+		if c.PathFile != "" && c.OutputFile == "" {
+			filename = filepath.Join(c.PathFile, filename)
+			if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+				return fmt.Errorf("failed to create directory: %v", err)
+			}
+		}
+
+		
+		err := Download(link, c, filename, logger, Overide)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			continue
+		}
+
 	}
 
 	return nil
@@ -46,48 +50,38 @@ func GetOutputFromUrl(Link string) string {
 	return filename
 }
 
-func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide bool) error {
+func Download(Link string, c *FlagsComponents, filename string, logger *log.Logger, Overide bool) error {
 	// Print timestamp and URL
-	logOrPrint(logger, c.Background, fmt.Sprintf("--%s--  %s", time.Now().Format("2006-01-02 15:04:05"), c.Link))
+	logOrPrint(logger, c.Background, fmt.Sprintf("--%s--  %s", time.Now().Format("2006-01-02 15:04:05"), Link))
 
 	// Parse URL to get host
-	url, err := url.Parse(c.Link)
+	url, err := url.Parse(Link)
 	if err != nil {
 		return fmt.Errorf("failed to parse URL: %v", err)
 	}
-	response, err := http.Get(c.Link)
+	response, err := http.Get(Link)
 	if err != nil {
 		return err
 	}
 
-	if response.StatusCode != 200 {
-		return errors.New("bad status")
-	}
-	
+	// if response.StatusCode != 200 {
+	// 	return errors.New("bad status")
+	// }
+
 	// Resolve hostname (simulate DNS lookup)
-	if !c.Background {
-		fmt.Printf("Resolving %s (%s)... ", url.Host, url.Host)
-	} else {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)...", url.Host, url.Host))
-	}
+
+	logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)...", url.Host, url.Host))
 
 	// Look up IP address
 	ips, err := net.LookupIP(url.Host)
 	if err != nil {
-		if !c.Background {
-			fmt.Printf("failed\n")
-		}
 		logOrPrint(logger, c.Background, "DNS resolution failed")
 		return fmt.Errorf("failed to resolve hostname: %v", err)
 	}
 
 	// Print first IP
 	if len(ips) > 0 {
-		if !c.Background {
-			fmt.Printf("%s\n", ips[0].String())
-		} else {
-			logOrPrint(logger, c.Background, fmt.Sprintf("Resolved to: %s", ips[0].String()))
-		}
+		logOrPrint(logger, c.Background, fmt.Sprintf("Resolved to: %s", ips[0].String()))
 	}
 
 	// Print connecting message
@@ -95,16 +89,12 @@ func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide b
 	if url.Scheme == "https" {
 		port = "443"
 	}
-	
-	if !c.Background {
-		fmt.Printf("Connecting to %s (%s)|%s|:%s... ", url.Host, url.Host, ips[0].String(), port)
-	} else {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
-	}
+
+	logOrPrint(logger, c.Background, fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
 
 	startTime := time.Now()
 	defer response.Body.Close()
-	
+
 	if !c.Background {
 		fmt.Printf("connected.\n")
 	} else {
@@ -113,6 +103,9 @@ func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide b
 
 	// Print HTTP request status
 	logOrPrint(logger, c.Background, fmt.Sprintf("HTTP request sent, awaiting response... %s", response.Status))
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("--%s--  Error %d: %s", time.Now().Format("2006-01-02 15:04:05"), response.StatusCode, response.Status)
+	}
 
 	// Print content length
 	fileSize := response.ContentLength
@@ -132,7 +125,7 @@ func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide b
 		return fmt.Errorf("failed to create directory: %v", err)
 	}
 
-	// Create output file and ovrid the old
+	// Create output file and ovrid the old if needed
 	var out *os.File
 	if Overide {
 		out, err = os.Create(filename)
@@ -182,19 +175,22 @@ func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide b
 	logOrPrint(logger, c.Background, fmt.Sprintf("Saving to: '%s'\n", filepath.Base(filename)))
 
 	// Download with progress - ALWAYS show progress unless in background mode
-	var downloaded int64
-	if c.RateLimite > 0 {
-		// If you have rate limiting implementation
-		// downloaded, err = io.Copy(out, response.Body)
-	} else {
-		if !c.Background {
-			// Show progress regardless of whether we know file size
-			downloaded, err = copyWithProgress(response.Body, out, fileSize, filepath.Base(filename), logger, c.Background)
-		} else {
-			// implement the code for -B flag
-			downloaded, err = io.Copy(out, response.Body)
-		}
+	rate, err := parseRateLimit(c.RateLimite)
+	if err != nil {
+		return err
 	}
+	var downloaded int64
+	if rate > 0 {
+		downloaded, err = copyWithRateLimit(response.Body, out, rate, fileSize, filename, logger, c.Background)
+	} else {
+		// Show progress regardless of whether we know file size
+		downloaded, err = copyWithProgress(response.Body, out, fileSize, filepath.Base(filename), logger, c.Background)
+	}
+	// else {
+	// 	// implement the code for -B flag
+	// 	downloaded, err = io.Copy(out, response.Body)
+	// }
+	// }
 
 	if err != nil {
 		return fmt.Errorf("download failed: %v", err)
@@ -216,10 +212,11 @@ func Download(c *FlagsComponents, filename string, logger *log.Logger, Overide b
 
 func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool) (int64, error) {
 	var written int64
-	buf := make([]byte, 32*1024) // 32KB buffer
+	buf := make([]byte, 32*1024)
+
 	startTime := time.Now()
 	lastUpdate := time.Now()
-	
+	// n := 0
 	for {
 		number_of_bytes_readed, err := src.Read(buf)
 		if number_of_bytes_readed > 0 {
@@ -245,6 +242,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 			if err != io.EOF {
 				return written, err
 			}
+
 			break
 		}
 	}
@@ -254,44 +252,23 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 	return written, nil
 }
 
-// Helper function to show progress
 func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool) {
 	// If in background mode, log progress periodically instead of showing progress bar
-	if background {
-		// Log progress every MB or when complete
-		if downloaded%(1024*1024) == 0 || (total > 0 && downloaded >= total) {
-			speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-			logOrPrint(logger, background, fmt.Sprintf("Downloaded: %.2fMB, Speed: %.2fMB/s", 
-				float64(downloaded)/(1024*1024), speed))
-		}
-		return
-	}
-
-	// Foreground mode - show progress bar
-	// Avoid division by zero
-	if duration.Seconds() <= 0 {
-		duration = 1 * time.Millisecond
-	}
+	// if background {
+	// 	// Log progress every MB or when complete
+	// 	if downloaded%(1024*1024) == 0 || (total > 0 && downloaded >= total) {
+	// 		speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
+	// 		logOrPrint(logger, background, fmt.Sprintf("Downloaded: %.2fMB, Speed: %.2fMB/s",
+	// 			float64(downloaded)/(1024*1024), speed))
+	// 	}
+	// 	return
+	// }
 
 	// Calculate speed in MB/s with proper bounds checking
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-	
-	// Cap extremely high speeds that cause scientific notation
-	if speed > 999.99 {
-		speed = 999.99
-	}
-	if speed < 0.01 {
-		speed = 0.01
-	}
-
-	// Truncate filename if too long (like wget does)
-	displayName := filename
-	if len(displayName) > 20 {
-		displayName = displayName[:17] + "..."
-	}
 
 	// Create progress bar similar to wget
-	barWidth := 70  // Reduced width to fit better
+	barWidth := 70 // Reduced width to fit better
 	var progressBar string
 
 	if total > 0 {
@@ -311,40 +288,26 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 		progressBar = strings.Repeat(" ", pos) + "  <=>  " + strings.Repeat(" ", barWidth-pos-6)
 	}
 
-	// Format similar to wget output - FIXED the size display
-	fmt.Printf("\r%-20s [%s] %6.2fM %6.2fMB/s",
-		displayName,
-		progressBar,
-		float64(downloaded)/(1024*1024), // FIXED: Show downloaded size in MB
-		speed)
+	// downloaded file size
+	var filesize string
+	if downloaded/(1024*1024) > 1 {
+		filesize = fmt.Sprintf("%.2fM", float64(downloaded)/(1024*1024))
+	} else {
+		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024*1024))
+	}
+	fmt.Println("bbbbbbbbbb", background)
+	logOrPrint(logger, background, fmt.Sprintf("\r%-20s [%s] %s %s", filename, progressBar, filesize, formatSpeed(speed)))
 
 	// Add timing info
 	if total > 0 && downloaded >= total {
 		// Complete - show "in Xs"
-		fmt.Printf(" in %.1fs", duration.Seconds())
+		logOrPrint(logger, background, fmt.Sprintf(" in %.1fs", duration.Seconds()))
 	} else if total > 0 && downloaded < total && speed > 0 {
 		// Show ETA
 		remaining := total - downloaded
-		eta := time.Duration(float64(remaining)/speed/1024/1024) * time.Second
-		fmt.Printf(" eta %.1fs", eta.Seconds())
+		eta := time.Duration(float64(remaining)/speed) * 1000
+		logOrPrint(logger, background, fmt.Sprintf(" eta %.1f", eta.Seconds()))
 	}
 
-	// Force flush - FIXED: Use proper flush
 	os.Stdout.Sync()
-}
-
-func formatSpeed(speedMBps float64) string {
-	// Cap extremely high speeds to avoid scientific notation
-	if speedMBps > 999.99 {
-		speedMBps = 999.99
-	}
-	if speedMBps < 0.001 {
-		speedMBps = 0.001
-	}
-	
-	// Fixed logic: show KB/s when speed is LESS than 1 MB/s
-	if speedMBps < 1 {
-		return fmt.Sprintf("%.0f KB/s", speedMBps*1024)
-	}
-	return fmt.Sprintf("%.2f MB/s", speedMBps)
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func DownloadFile(args *FlagsComponents) error {
+func DownloadFiles(args *FlagsComponents) error {
 	if err := args.Validate(); err != nil {
 		return err
 	}
@@ -28,6 +28,7 @@ func DownloadFile(args *FlagsComponents) error {
 
 		// Log start time
 		logger.Printf("start at %s", time.Now().Format("2006-01-02 15:04:05"))
+		
 	}
 
 	// Choose execution path based on flags
@@ -39,7 +40,7 @@ func DownloadFile(args *FlagsComponents) error {
 		// return args.executeMirrorDownload(logger)
 	} else {
 		// Single file download
-		return args.DownloadOneSource(logger)
+		return DownloadOneSource(args, logger)
 	}
 	return nil
 }
