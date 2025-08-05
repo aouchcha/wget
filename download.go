@@ -28,7 +28,7 @@ func DownloadFiles(args *FlagsComponents) error {
 
 		// Log start time
 		logger.Printf("start at %s", time.Now().Format("2006-01-02 15:04:05"))
-		
+
 	}
 
 	// Choose execution path based on flags
@@ -36,8 +36,22 @@ func DownloadFiles(args *FlagsComponents) error {
 		// Batch download from file
 		// return args.executeBatchDownload(logger)
 	} else if args.isMirror {
-		// Mirror website
-		// return args.executeMirrorDownload(logger)
+		for _, link := range args.Links {
+
+			config := NewMirrorConfig(link)
+
+			if !config.Background {
+				logStart(link)
+			}
+			if err := config.ParseAndDownload(link); err != nil {
+				logError(err.Error())
+				os.Exit(1)
+			}
+			if !config.Background {
+				logFinish(link)
+			}
+		}
+		return nil
 	} else {
 		// Single file download
 		return DownloadOneSource(args, logger)
