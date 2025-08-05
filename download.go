@@ -36,18 +36,19 @@ func DownloadFiles(args *FlagsComponents) error {
 		// Batch download from file
 		// return args.executeBatchDownload(logger)
 	} else if args.isMirror {
+		fmt.Println("++++++++++++++++++++++++++++++",args)
 		for _, link := range args.Links {
 
-			config := NewMirrorConfig(link)
+			args.NewMirrorConfig(link)
 
-			if !config.Background {
+			if !args.Background {
 				logStart(link)
 			}
-			if err := config.ParseAndDownload(link); err != nil {
+			if err := args.ParseAndDownload(link); err != nil {
 				logError(err.Error())
 				os.Exit(1)
 			}
-			if !config.Background {
+			if !args.Background {
 				logFinish(link)
 			}
 		}

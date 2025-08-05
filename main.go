@@ -2,33 +2,10 @@ package main
 
 import (
 	"fmt"
-	"net/http"
 	"os"
-	"sync"
 	// "os/signal"
 	// "syscall"
 )
-
-type FlagsComponents struct {
-	Links        []string
-	InputFile    string
-	OutputFile   string
-	PathFile     string
-	RateLimite   string
-	Exclude      []string
-	Reject       []string
-	isMirror     bool
-	Background   bool
-	OnlySameHost bool
-	RootHost     string
-	Convert      bool
-	BaseDir      string
-	Client       *http.Client
-	MaxDepth     int
-	visited      map[string]struct{}
-	visitedMu    sync.RWMutex
-	// wg         sync.WaitGroup
-}
 
 func main() {
 	// // Handle SIGPIPE gracefully

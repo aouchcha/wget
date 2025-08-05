@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,11 +17,35 @@ import (
 	"golang.org/x/net/html"
 )
 
+type FlagsComponents struct {
+	Links        []string
+	InputFile    string
+	OutputFile   string
+	PathFile     string
+	RateLimite   string
+	Exclude      []string
+	Reject       []string
+	isMirror     bool
+	Background   bool
+	OnlySameHost bool
+	RootHost     string
+	Convert      bool
+	BaseDir      string
+	Client       *http.Client
+	MaxDepth     int
+	visited      map[string]struct{}
+	visitedMu    sync.RWMutex
+	// wg         sync.WaitGroup
+}
+
 var cssURLRegex = regexp.MustCompile(`url\(['"]?([^'")]+)['"]?\)`)
 
 // NewMirrorConfig initializes config with root domain
-func NewMirrorConfig(rootURL string) *FlagsComponents {
-	u, _ := url.Parse(rootURL)
+func (m *FlagsComponents) NewMirrorConfig(rootURL string) error {
+	u, err := url.Parse(rootURL)
+	if err != nil {
+		return err
+	}
 	host := u.Host
 
 	// Create transport with idle connections
@@ -35,16 +60,16 @@ func NewMirrorConfig(rootURL string) *FlagsComponents {
 		Transport: transport,
 	}
 
-	return &FlagsComponents{
-		BaseDir:      ".",
-		MaxDepth:     3,
-		Background:   false,
-		OnlySameHost: true,
-		RootHost:     host,
-		Client:       client,
-		visited:      make(map[string]struct{}),
-		visitedMu:    sync.RWMutex{},
-	}
+	m.BaseDir = "."
+	m.MaxDepth = 3
+	m.Background = false
+	m.OnlySameHost = true
+	m.RootHost = host
+	m.Client = client
+	m.visited = make(map[string]struct{})
+	m.visitedMu = sync.RWMutex{}
+
+	return nil
 }
 
 // ParseAndDownload downloads a page and its assets
@@ -77,7 +102,6 @@ func (m *FlagsComponents) ParseAndDownload(pageURL string) error {
 
 func (m *FlagsComponents) crawl(u *url.URL, depth int) error {
 	absURL := u.String()
-
 	// Skip if already visited
 	m.visitedMu.Lock()
 	if _, seen := m.visited[absURL]; seen {
@@ -86,6 +110,22 @@ func (m *FlagsComponents) crawl(u *url.URL, depth int) error {
 	}
 	m.visited[absURL] = struct{}{}
 	m.visitedMu.Unlock()
+
+	// Check reject list before downloading
+	for _, ext := range m.Reject {
+		if strings.HasSuffix(strings.ToLower(u.Path), strings.ToLower(ext)) {
+			fmt.Printf("[INFO] Skipping %s due to reject rule (%s)\n", u.String(), ext)
+			return nil
+		}
+	}
+
+	// Skip URLs with excluded path prefixes
+	for _, prefix := range m.Exclude {
+		if strings.HasPrefix(u.Path, prefix) {
+			fmt.Printf("[INFO] Skipping %s due to exclude path prefix (%s)\n", u.String(), prefix)
+			return nil
+		}
+	}
 
 	// Respect max depth
 	if depth >= m.MaxDepth {
@@ -146,6 +186,19 @@ func (m *FlagsComponents) crawl(u *url.URL, depth int) error {
 	if err := ioutil.WriteFile(localPath, body, 0o644); err != nil {
 		logError(fmt.Sprintf("Failed to write file %s: %v", localPath, err))
 		return err
+	}
+
+	// === NEW: convert links inside saved HTML if --convert-links is enabled ===
+	if m.Convert && strings.Contains(contentType, "text/html") {
+		convertedBody, err := m.convertLinks(body, u, localPath)
+		if err != nil {
+			logError(fmt.Sprintf("Failed to convert links in %s: %v", localPath, err))
+		} else {
+			err = ioutil.WriteFile(localPath, convertedBody, 0o644)
+			if err != nil {
+				logError(fmt.Sprintf("Failed to write converted file %s: %v", localPath, err))
+			}
+		}
 	}
 
 	// Extract links if HTML
@@ -318,4 +371,143 @@ func (m *FlagsComponents) GetLocalPath(u *url.URL, contentType string) (string, 
 
 	path = filepath.Clean("/" + path)
 	return filepath.Join(m.BaseDir, u.Host, path), nil
+}
+
+// convertLinks rewrites all URLs in the HTML content to point to local relative paths
+func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, localPath string) ([]byte, error) {
+	doc, err := html.Parse(bytes.NewReader(htmlContent))
+	if err != nil {
+		return nil, err
+	}
+
+	// Helper to recursively walk nodes and rewrite URLs
+	var rewrite func(*html.Node)
+	rewrite = func(n *html.Node) {
+		if n.Type == html.ElementNode {
+			// Attributes that can contain URLs
+			attrsToCheck := []string{"href", "src", "srcset", "poster", "data-src", "data-srcset", "data-original", "action", "style"}
+
+			for i, attr := range n.Attr {
+				for _, key := range attrsToCheck {
+					if attr.Key == key {
+						if key == "srcset" || key == "data-srcset" {
+							n.Attr[i].Val = m.convertSrcset(attr.Val, pageURL, localPath)
+						} else if key == "style" {
+							n.Attr[i].Val = m.convertCSSURLs(attr.Val, pageURL, localPath)
+						} else {
+							n.Attr[i].Val = m.convertSingleURL(attr.Val, pageURL, localPath)
+						}
+					}
+				}
+			}
+		}
+
+		// Recursively process children
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			rewrite(c)
+		}
+	}
+
+	rewrite(doc)
+
+	var buf bytes.Buffer
+	if err := html.Render(&buf, doc); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// convertSingleURL converts a single URL to relative local path if possible
+func (m *FlagsComponents) convertSingleURL(rawurl string, pageURL *url.URL, localPath string) string {
+	parsedURL, err := pageURL.Parse(rawurl)
+	if err != nil {
+		// If invalid URL, return original
+		return rawurl
+	}
+
+	// Skip if URL is a fragment or empty
+	if parsedURL.Scheme == "" && (parsedURL.Host == "" || parsedURL.Host == pageURL.Host) {
+		// It's relative or same host URL
+
+		localFilePath, err := m.GetLocalPath(parsedURL, "") // contentType not needed here
+		if err != nil {
+			return rawurl
+		}
+
+		rel, err := filepath.Rel(filepath.Dir(localPath), localFilePath)
+		if err != nil {
+			return rawurl
+		}
+
+		// Convert Windows paths to slashes for URLs
+		rel = filepath.ToSlash(rel)
+		return rel
+	}
+
+	// External URLs or others left unchanged
+	return rawurl
+}
+
+// convertSrcset handles rewriting of multiple URLs in srcset attributes
+func (m *FlagsComponents) convertSrcset(val string, pageURL *url.URL, localPath string) string {
+	parts := strings.Split(val, ",")
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		fields := strings.Fields(part)
+		if len(fields) == 0 {
+			continue
+		}
+		urlPart := fields[0]
+		converted := m.convertSingleURL(urlPart, pageURL, localPath)
+		fields[0] = converted
+		parts[i] = strings.Join(fields, " ")
+	}
+	return strings.Join(parts, ", ")
+}
+
+// convertCSSURLs rewrites url(...) inside CSS style attribute strings
+func (m *FlagsComponents) convertCSSURLs(styleVal string, pageURL *url.URL, localPath string) string {
+	const prefix = "url("
+	const suffix = ")"
+
+	// Replace all url(...) with converted paths
+	replacer := func(match string) string {
+		trimmed := strings.TrimPrefix(match, prefix)
+		trimmed = strings.TrimSuffix(trimmed, suffix)
+		trimmed = strings.Trim(trimmed, `"'`)
+
+		converted := m.convertSingleURL(trimmed, pageURL, localPath)
+		return prefix + `"` + converted + `"` + suffix
+	}
+
+	// This is a simple way, you could do regex or manual search
+	// Here we replace all occurrences of url(...) in the style string
+	var result strings.Builder
+	remaining := styleVal
+	for {
+		idx := strings.Index(remaining, prefix)
+		if idx == -1 {
+			result.WriteString(remaining)
+			break
+		}
+		result.WriteString(remaining[:idx])
+		remaining = remaining[idx:]
+		endIdx := strings.Index(remaining, suffix)
+		if endIdx == -1 {
+			// malformed, just append the rest
+			result.WriteString(remaining)
+			break
+		}
+
+		urlFunc := remaining[:endIdx+len(suffix)]
+		converted := replacer(urlFunc)
+		result.WriteString(converted)
+		remaining = remaining[endIdx+len(suffix):]
+	}
+
+	return result.String()
 }

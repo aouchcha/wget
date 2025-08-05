@@ -114,66 +114,97 @@ func CatchRate(args []string, comp *FlagsComponents, flags []string) (bool, erro
 }
 
 func CatchTheRejectedSuffix(args []string, comp *FlagsComponents, flags []string) (bool, error) {
-	if !comp.isMirror {
-		return false, errors.New("flag --mirror is missing")
-	}
-	var rejectEx string
-	var checker bool
-	if strings.Contains(args[0], "=") {
-		sli := strings.Split(args[0], "=")
-		if !CheckValidFlag(sli[0], flags) {
-			return false, errors.New("invalid flag -R || --reject")
-		}
-		if len(sli) != 2 || sli[1] == "" {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		}
-		rejectEx = sli[1]
-		checker = false
+    if !comp.isMirror {
+        return false, errors.New("flag --mirror is missing")
+    }
+    var rejectEx string
+    var checker bool
 
-	} else {
-		if !CheckValidFlag(args[0], flags) {
-			return false, errors.New("invalid flag -R || --reject")
-		}
-		if args[1] == "" || strings.HasPrefix(args[1], "http") {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		}
-		rejectEx = args[1]
-		checker = true
-	}
-	comp.Reject = strings.Split(rejectEx, ",")
-	return checker, nil
+    if strings.Contains(args[0], "=") {
+        sli := strings.Split(args[0], "=")
+        if !CheckValidFlag(sli[0], flags) {
+            return false, errors.New("invalid flag -R || --reject")
+        }
+        if len(sli) != 2 || sli[1] == "" {
+            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+        }
+        rejectEx = sli[1]
+        checker = false
+
+    } else {
+        if !CheckValidFlag(args[0], flags) {
+            return false, errors.New("invalid flag -R || --reject")
+        }
+        if args[1] == "" || strings.HasPrefix(args[1], "http") {
+            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+        }
+        rejectEx = args[1]
+        checker = true
+    }
+
+    // Split and normalize: remove quotes, spaces, and leading '*' from each suffix
+    rawList := strings.Split(rejectEx, ",")
+    normalized := make([]string, 0, len(rawList))
+    for _, r := range rawList {
+        r = strings.TrimSpace(r)
+        r = strings.Trim(r, `"'`)           // remove quotes if any
+        r = strings.TrimPrefix(r, "*")      // remove leading '*'
+        r = strings.ToLower(r)              // normalize case
+        normalized = append(normalized, r)
+    }
+    comp.Reject = normalized
+
+    return checker, nil
 }
+
 
 func CatchTheRExcludedFolders(args []string, comp *FlagsComponents, flags []string) (bool, error) {
 	if !comp.isMirror {
 		return false, errors.New("flag --mirror is missing")
 	}
-	var ExcludFolfers string
+	var excludeEx string
 	var checker bool
+
 	if strings.Contains(args[0], "=") {
 		sli := strings.Split(args[0], "=")
 		if !CheckValidFlag(sli[0], flags) {
-			return false, errors.New("invalid flag -X || --exclud")
+			return false, errors.New("invalid flag -X || --exclude")
 		}
 		if len(sli) != 2 || sli[1] == "" {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		} else {
-			ExcludFolfers = sli[1]
-			checker = false
+			return false, errors.New("missing exclude paths while presence of the -X || --exclude flag")
 		}
+		excludeEx = sli[1]
+		checker = false
+
 	} else {
 		if !CheckValidFlag(args[0], flags) {
-			return false, errors.New("invalid flag -X || --exclud")
+			return false, errors.New("invalid flag -X || --exclude")
 		}
 		if args[1] == "" || strings.HasPrefix(args[1], "http") {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
+			return false, errors.New("missing exclude paths while presence of the -X || --exclude flag")
 		}
-		ExcludFolfers = args[1]
+		excludeEx = args[1]
 		checker = true
 	}
-	comp.Exclude = strings.Split(ExcludFolfers, ",")
+
+	rawList := strings.Split(excludeEx, ",")
+	normalized := make([]string, 0, len(rawList))
+	for _, r := range rawList {
+		r = strings.TrimSpace(r)
+		r = strings.Trim(r, `"'`) // remove quotes if any
+		if !strings.HasPrefix(r, "/") {
+			r = "/" + r
+		}
+		if !strings.HasSuffix(r, "/") {
+			r = r + "/"
+		}
+		normalized = append(normalized, r)
+	}
+	comp.Exclude = normalized
+
 	return checker, nil
 }
+
 
 func (c *FlagsComponents) Validate() error {
 	// Check for conflicting flags
