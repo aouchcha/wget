@@ -1,0 +1,8 @@
+Output will be written to "wget-log".
+sending request, awaiting response... status 200 OK
+content size: 20900490 [~19.93MB]
+saving file to: assets.01-edu.org/wgetDataSamples/20MB.zip
+32.00KiB / 19.93MiB [                                                            ] 0.16% 319.33KiB/s 64s192.00KiB / 19.93MiB [                                                            ] 0.94% 956.84KiB/s 21s832.00KiB / 19.93MiB [==                                                          ] 4.08% 2.70MiB/s 7s3.33MiB / 19.93MiB [==========                                                  ] 16.70% 8.30MiB/s 2s8.33MiB / 19.93MiB [=========================                                   ] 41.78% 16.65MiB/s 1s13.78MiB / 19.93MiB [=========================================                   ] 69.14% 22.94MiB/s 0s19.20MiB / 19.93MiB [=========================================================   ] 96.34% 27.42MiB/s 0s19.93MiB / 19.93MiB [============================================================] 100.00% 27.49MiB/s 0s
+
+Downloaded [https://assets.01-edu.org/wgetDataSamples/20MB.zip]
+finished at 2025-08-05 00:53:44

@@ -12,7 +12,7 @@ var (
     Stderr io.Writer = os.Stderr
 )
 
-func logStart(url string) {
+func logStart() {
     t := time.Now().Format("2006-01-02 15:04:05")
     fmt.Fprintf(Stdout, "start at %s\n", t)
 }

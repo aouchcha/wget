@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -31,15 +30,15 @@ type MirrorConfig struct {
 }
 
 func NewMirrorConfig(urlStr string) (*MirrorConfig, error) {
-    u, err := url.Parse(urlStr)
-    if err != nil {
-        return nil, err
-    }
-    return &MirrorConfig{
-        BaseURL: u,
-        BaseDir: ".", // Mirror root is current directory
-        Client:  &http.Client{Timeout: 10 * time.Second},
-    }, nil
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return nil, err
+	}
+	return &MirrorConfig{
+		BaseURL: u,
+		BaseDir: ".", // Mirror root is current directory
+		Client:  &http.Client{Timeout: 10 * time.Second},
+	}, nil
 }
 
 func (m *MirrorConfig) ShouldDownload(link string) bool {
@@ -73,141 +72,137 @@ func (m *MirrorConfig) ShouldDownload(link string) bool {
 
 // GetLocalPath converts a URL to a local file path, preserving full directory structure
 func (m *MirrorConfig) GetLocalPath(link string) (string, error) {
-    u, err := url.Parse(link)
-    if err != nil {
-        return "", err
-    }
+	u, err := url.Parse(link)
+	if err != nil {
+		return "", err
+	}
 
-    path := u.Path
-    if path == "" || path[len(path)-1] == '/' {
-        path += "index.html"
-    }
+	path := html.UnescapeString(u.Path)
 
-    path = filepath.Clean("/" + path)
-    return filepath.Join(m.BaseDir, u.Host, path), nil
+	if path == "" || path[len(path)-1] == '/' {
+		path += "index.html"
+	}
+
+	path = filepath.Clean("/" + path)
+	return filepath.Join(m.BaseDir, u.Host, path), nil
 }
 
-func (m *MirrorConfig) ConvertLink(link string) string {
-    u, err := url.Parse(link)
-    if err != nil || u.Host != m.BaseURL.Host {
-        return link
-    }
-    path := u.Path
-    if path == "" || path[len(path)-1] == '/' {
-        path += "index.html"
-    }
-    fullPath := filepath.Join(m.BaseURL.Host, path)
-    return "./" + filepath.ToSlash(fullPath)
-}
+// func (m *MirrorConfig) ConvertLink(link string) string {
+// 	u, err := url.Parse(link)
+// 	if err != nil || u.Host != m.BaseURL.Host {
+// 		return link
+// 	}
+// 	path := u.Path
+// 	if path == "" || path[len(path)-1] == '/' {
+// 		path += "index.html"
+// 	}
+// 	fullPath := filepath.Join(m.BaseURL.Host, path)
+// 	return "./" + filepath.ToSlash(fullPath)
+// }
 
 func (m *MirrorConfig) ParseAndDownload(u string) error {
-    resp, err := m.Client.Get(u)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
+	resp, err := m.Client.Get(u)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        return fmt.Errorf("failed to fetch %s: %s", u, resp.Status)
-    }
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to fetch %s: %s", u, resp.Status)
+	}
 
-    // Use full path from URL to determine where to save
-    localPath, err := m.GetLocalPath(u)
-    if err != nil {
-        return err
-    }
+	// Use full path from URL to determine where to save
+	localPath, err := m.GetLocalPath(u)
+	if err != nil {
+		return err
+	}
 
-    // Create full directory structure
-    if err := os.MkdirAll(filepath.Dir(localPath), 0755); err != nil {
-        return err
-    }
+	// Create full directory structure
+	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
+		return err
+	}
 
-    outFile, err := os.Create(localPath)
-    if err != nil {
-        return err
-    }
-    defer outFile.Close()
+	outFile, err := os.Create(localPath)
+	if err != nil {
+		return err
+	}
+	defer outFile.Close()
 
-    contentType := resp.Header.Get("Content-Type")
-    isHTML := strings.Contains(contentType, "text/html")
+	// contentType := resp.Header.Get("Content-Type")
+	// isHTML := strings.Contains(contentType, "text/html")
 
-    var links []string
+	var links []string
+	var convert_link []string
 
-    if isHTML {
-        var buf strings.Builder
-        tokenizer := html.NewTokenizer(resp.Body)
+	var buf strings.Builder
+	tokenizer := html.NewTokenizer(resp.Body)
 
-        for {
-            tt := tokenizer.Next()
-            if tt == html.ErrorToken {
-                break
-            }
+	for {
+		tt := tokenizer.Next()
+		if tt == html.ErrorToken {
+			break
+		}
 
-            token := tokenizer.Token()
-            tag := token.Data
+		token := tokenizer.Token()
+		tag := token.Data
+		// Extract href and src
+		if tag == "style"{
 
-            // Extract href and src
-            for _, attr := range token.Attr {
-                var link string
-                if (tag == "a" || tag == "link") && attr.Key == "href" {
-                    link = attr.Val
-                } else if (tag == "img" || tag == "script" || tag == "link") && attr.Key == "src" {
-                    link = attr.Val
-                }
+			fmt.Println(token.Data)
+		}
+		
+		for _, attr := range token.Attr {
+			var link string
 
-                if link != "" {
-                    absLink := m.resolveURL(u, link)
-                    if m.ShouldDownload(absLink) {
-                        links = append(links, absLink)
-                    }
-                }
-            }
+			if ((tag == "a" || tag == "link") && attr.Key == "href") ||
+			 ((tag == "img" || tag == "script") && attr.Key == "src") || ((tag == "style") && attr.Key == "url") {
+				link = attr.Val
+				fmt.Println(attr)
+			}
 
-            buf.WriteString(token.String())
-        }
+			if link != "" {
+				absLink := m.resolveURL(u, link)
+				if m.ShouldDownload(absLink) {
+					links = append(links, html.EscapeString(absLink))
+					convert_link = append(convert_link, link)
+				}
+			}
+		}
 
-        htmlContent := buf.String()
+		buf.WriteString(token.String())
+	}
 
-        // Convert links for offline viewing if enabled
-        if m.Convert {
-            for _, link := range links {
-                localLink := "./" + strings.TrimPrefix(
-                    strings.TrimPrefix(link, "https://"),
-                    "http://",
-                )
-                localLink = strings.ReplaceAll(localLink, "/", string(filepath.Separator))
-                localLink = ".\\" + localLink // for Windows? Better: use filepath.Join logic
-                // Instead, use relative path from target
-                rel, _ := filepath.Rel(filepath.Dir(localPath), m.BaseDir)
-                _ = rel // TODO: implement real relative conversion
-                // For now, use simple conversion
-                converted := m.ConvertLink(link)
-                htmlContent = strings.ReplaceAll(htmlContent, link, converted)
-            }
-        }
+	htmlContent := buf.String()
 
-        outFile.WriteString(htmlContent)
-    } else {
-        // Non-HTML: just copy the bytes
-        io.Copy(outFile, resp.Body)
-    }
+	// Convert links for offline viewing if enabled
+	if m.Convert && len(convert_link) == len(links) {
+		for i, link := range convert_link {
+			htmlContent = strings.ReplaceAll(htmlContent, link, links[i])
+		}
+	}
 
-    // Download all discovered assets concurrently
-    var wg sync.WaitGroup
-    for _, link := range links {
-        wg.Add(1)
-        go func(url string) {
-            defer wg.Done()
-            dl := NewDownloader(url)
-            dl.DestDir = m.BaseDir // let buildOutputPath handle full path
-            if err := dl.Download(); err != nil {
-                fmt.Fprintf(Stderr, "Failed to download %s: %v\n", url, err)
-            }
-        }(link)
-    }
-    wg.Wait()
+	outFile.WriteString(htmlContent)
+	// } else {
+	// 	// Non-HTML: just copy the bytes
+	// 	io.Copy(outFile, resp.Body)
+	// }
 
-    return nil
+	// Download all discovered assets concurrently
+	var wg sync.WaitGroup
+	for _, link := range links {
+		wg.Add(1)
+		go func(url string) {
+			defer wg.Done()
+			dl := NewDownloader(url)
+			dl.DestDir = m.BaseDir // let buildOutputPath handle full path
+			if err := dl.Download(); err != nil {
+				fmt.Fprintf(Stderr, "Failed to download %s: %v\n", url, err)
+			}
+		}(link)
+	}
+	wg.Wait()
+
+	return nil
 }
 
 func (m *MirrorConfig) resolveURL(base, rel string) string {
@@ -226,4 +221,14 @@ func updateAttr(attrs []html.Attribute, key, newVal string) []html.Attribute {
 		}
 	}
 	return attrs
+}
+
+func (m *MirrorConfig) makeAbsoluteURL(linkURL string) (string, error) {
+	link, err := url.Parse(linkURL)
+	if err != nil {
+		return "", err
+	}
+
+	absolute := m.BaseURL.ResolveReference(link)
+	return absolute.String(), nil
 }

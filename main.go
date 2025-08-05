@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"io"
@@ -25,7 +26,8 @@ func main() {
 	flag.Parse()
 
 	args := flag.Args()
-	if len(args) == 0 && *inputFlag == "" && !*mirrorFlag {
+
+	if len(args) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: go-wget [options] <url>")
 		os.Exit(1)
 	}
@@ -64,7 +66,7 @@ func main() {
 					dl.SetRateLimit(*rateLimitFlag)
 				}
 				if !*bgFlag {
-					logStart(url)
+					logStart()
 				}
 				if err := dl.Download(); err != nil {
 					logError(err.Error())
@@ -77,7 +79,7 @@ func main() {
 	}
 
 	// Handle --mirror
-	if *mirrorFlag && len(args) > 0 {
+	if *mirrorFlag{
 		config, err := NewMirrorConfig(args[0])
 		if err != nil {
 			logError(err.Error())
@@ -94,7 +96,7 @@ func main() {
 		config.Convert = *convertFlag
 
 		if !*bgFlag {
-			logStart(args[0])
+			logStart()
 		}
 		if err := config.ParseAndDownload(args[0]); err != nil {
 			logError(err.Error())
@@ -106,10 +108,6 @@ func main() {
 		return
 	}
 
-	// Normal single download
-	if len(args) == 0 {
-		return
-	}
 	url := args[0]
 
 	dl := NewDownloader(url)
@@ -124,7 +122,7 @@ func main() {
 	dl.Background = *bgFlag
 
 	if !*bgFlag {
-		logStart(url)
+		logStart()
 	}
 	if err := dl.Download(); err != nil {
 		logError(err.Error())
@@ -140,28 +138,9 @@ func readLines(filename string) ([]string, error) {
 	defer file.Close()
 
 	var lines []string
-	buf := make([]byte, 4096)
-	var lineBuilder strings.Builder
-
-	for {
-		n, err := file.Read(buf)
-		if n > 0 {
-			lineBuilder.Write(buf[:n])
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	content := lineBuilder.String()
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if line != "" {
-			lines = append(lines, line)
-		}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
 	}
 	return lines, nil
 }
