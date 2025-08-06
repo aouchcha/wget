@@ -19,27 +19,45 @@ func HandleMultipleDownloads(filePath string) {
 	}
 	defer file.Close()
 
-	var wg sync.WaitGroup
+	var urls []string
 	scanner := bufio.NewScanner(file)
-
 	for scanner.Scan() {
-		url := strings.TrimSpace(scanner.Text())
-		if url == "" {
-			continue
+		link := strings.TrimSpace(scanner.Text())
+		if link != "" {
+			urls = append(urls, link)
 		}
-
-		wg.Add(1)
-		go func(link string) {
-			defer wg.Done()
-			err := DownloadFile(link, "")
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", link, err)
-			}
-		}(url)
 	}
 
+	var sizes []int64
+	for _, link := range urls {
+		resp, err := http.Head(link)
+		if err != nil {
+			sizes = append(sizes, -1)
+			continue
+		}
+		sizes = append(sizes, resp.ContentLength)
+		resp.Body.Close()
+	}
+	fmt.Printf("content size: %v\n", sizes)
+
+	var wg sync.WaitGroup
+	for _, link := range urls {
+		wg.Add(1)
+		go func(l string) {
+			defer wg.Done()
+			err := DownloadFile(l, "")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", l, err)
+				return
+			}
+			parts := strings.Split(l, "/")
+			fmt.Println("finished", parts[len(parts)-1])
+		}(link)
+	}
 	wg.Wait()
-	fmt.Println("Download finished from list:", filePath)
+
+	fmt.Println()
+	fmt.Println("Download finished: ", urls)
 }
 
 func DownloadFile(url, outputPath string) error {
@@ -53,7 +71,6 @@ func DownloadFile(url, outputPath string) error {
 		return fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// extract filename from URL
 	parts := strings.Split(url, "/")
 	fileName := parts[len(parts)-1]
 	if outputPath != "" {
@@ -71,6 +88,5 @@ func DownloadFile(url, outputPath string) error {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
-	fmt.Println("Downloaded:", url)
 	return nil
 }
