@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func copyWithRateLimit(src io.Reader, dst io.Writer, rateLimit int64, total int64, filename string, logger *log.Logger, background bool) (int64, error) {
+func copyWithRateLimit(src io.Reader, dst io.Writer, rateLimit int64, total int64, filename string, logger *log.Logger, background bool , Link string) (int64, error) {
 	var written int64
 
 	// Choose buffer size
@@ -61,7 +61,7 @@ func copyWithRateLimit(src io.Reader, dst io.Writer, rateLimit int64, total int6
 			// Update progress
 			now := time.Now()
 			if now.Sub(lastUpdate) > 500*time.Millisecond || err == io.EOF {
-				showProgress(written, total, filename, time.Since(startTime), logger, background)
+				showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
 				lastUpdate = now
 			}
 		}
@@ -75,7 +75,7 @@ func copyWithRateLimit(src io.Reader, dst io.Writer, rateLimit int64, total int6
 	}
 
 	// Final progress update
-	showProgress(written, total, filename, time.Since(startTime), logger, background)
+	showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
 	fmt.Println()
 	return written, nil
 }

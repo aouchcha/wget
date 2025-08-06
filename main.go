@@ -8,6 +8,8 @@ import (
 )
 
 func main() {
+
+	
 	// // Handle SIGPIPE gracefully
 	// signal.Ignore(syscall.SIGPIPE)
 
@@ -17,6 +19,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "usage go run . link to download \n go run -O=filename link")
 		return
 	}
+
 	components := FlagsComponents{}
 	err := parsing(args, &components)
 	if err != nil {

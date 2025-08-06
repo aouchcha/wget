@@ -13,6 +13,39 @@ import (
 	"time"
 )
 
+// func LegacyParsing() bool {
+// 	args := os.Args[1:]
+
+// 	// Old -B behavior
+// 	if contains(args, "-B") {
+// 		HandleBackgroundDownload())
+// 		return true
+// 	}
+
+// 	// Old -i behavior
+// 	for i := 0; i < len(args); i++ {
+// 		if strings.HasPrefix(args[i], "-i") {
+// 			var filePath string
+// 			if strings.Contains(args[i], "=") {
+// 				parts := strings.SplitN(args[i], "=", 2)
+// 				if len(parts) != 2 || parts[1] == "" {
+// 					fmt.Fprintln(os.Stderr, "Invalid -i flag format")
+// 					return true
+// 				}
+// 				filePath = parts[1]
+// 			} else if i+1 < len(args) {
+// 				filePath = args[i+1]
+// 			} else {
+// 				fmt.Fprintln(os.Stderr, "Missing file after -i flag")
+// 				return true
+// 			}
+// 			HandleMultipleDownloads(filePath)
+// 			return true
+// 		}
+// 	}
+// 	return false
+// }
+
 func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
 	for _, link := range c.Links {
 		filename := c.OutputFile
@@ -149,10 +182,12 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 	var downloaded int64
 	if rate > 0 {
-		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background)
+		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background, Link)
 	} else {
+		fmt.Println()
+		fmt.Println("wa zaaaabi")
 		// Show progress regardless of whether we know file size
-		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background)
+		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background, Link)
 	}
 
 	if err != nil {
@@ -172,7 +207,7 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	return nil
 }
 
-func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool) (int64, error) {
+func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool, Link string) (int64, error) {
 	var written int64
 	buf := make([]byte, 32*1024)
 
@@ -195,8 +230,9 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 
 			// Update progress more frequently - every 10ms or when finished
 			now := time.Now()
-			if now.Sub(lastUpdate) > 500*time.Millisecond || err == io.EOF {
-				showProgress(written, total, filename, time.Since(startTime), logger, background)
+			//here
+			if now.Sub(lastUpdate) > 10*time.Millisecond || err == io.EOF {
+				showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
 				lastUpdate = now
 			}
 		}
@@ -210,21 +246,22 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 	}
 
 	// Final progress update
-	showProgress(written, total, filename, time.Since(startTime), logger, background)
+	if !background {
+		showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
+	}
 	fmt.Println()
 	return written, nil
 }
 
-func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool) {
+func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool, Link string) {
 	// If in background mode, log progress periodically instead of showing progress bar
-	// if background {
-	// 	// Log progress every MB or when complete
-	// 	if downloaded%(1024*1024) == 0 || (total > 0 && downloaded >= total) {
-	// 		speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-	// 		logOrPrint(logger, background, fmt.Sprintf("Downloaded: %.2fMB, Speed: %.2fMB/s",
-	// 			float64(downloaded)/(1024*1024), speed))
-	// 	}
-	// }
+	if background {
+		fmt.Println(background)
+		fmt.Println("hqqqqqqqqqqqqni")
+		// Log progress every MB or when complete
+		HandleBackgroundDownloaded(Link, logger)
+		return
+	}
 
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
 
@@ -281,10 +318,10 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 		// 	fmt.Printf(" in %.1fs", duration.Seconds())
 		// } else {
 		// if {
-			logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
+		logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
 		// }
 		// }
-	} 
+	}
 	// else if total > 0 && downloaded < total && speed > 0 {
 	// 	// Show ETA
 	// 	// remaining := total - downloaded
