@@ -93,9 +93,9 @@ func parsing(args []string, components *FlagsComponents) error {
 		}
 		i += 1
 	}
-	if len(components.Links) == 0 {
-		return errors.New("you don't provide the program with link to download from it")
-	}
+	// if len(components.Links) == 0 {
+	// 	return errors.New("you don't provide the program with link to download from it")
+	// }
 	// fmt.Println(*components)
 	return nil
 }

@@ -4,9 +4,12 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func CheckValidFlag(f string, flags []string) bool {
@@ -74,7 +77,7 @@ func CatchPath(args []string, comp *FlagsComponents, flags []string) (bool, erro
 		return false, nil
 
 	} else {
-		fmt.Println("haaaaaaaani")
+		// fmt.Println("haaaaaaaani")
 		if !CheckValidFlag(args[0], flags) {
 			return false, errors.New("invalid flag -P")
 		}
@@ -114,66 +117,97 @@ func CatchRate(args []string, comp *FlagsComponents, flags []string) (bool, erro
 }
 
 func CatchTheRejectedSuffix(args []string, comp *FlagsComponents, flags []string) (bool, error) {
-	if !comp.isMirror {
-		return false, errors.New("flag --mirror is missing")
-	}
-	var rejectEx string
-	var checker bool
-	if strings.Contains(args[0], "=") {
-		sli := strings.Split(args[0], "=")
-		if !CheckValidFlag(sli[0], flags) {
-			return false, errors.New("invalid flag -R || --reject")
-		}
-		if len(sli) != 2 || sli[1] == "" {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		}
-		rejectEx = sli[1]
-		checker = false
+    if !comp.isMirror {
+        return false, errors.New("flag --mirror is missing")
+    }
+    var rejectEx string
+    var checker bool
 
-	} else {
-		if !CheckValidFlag(args[0], flags) {
-			return false, errors.New("invalid flag -R || --reject")
-		}
-		if args[1] == "" || strings.HasPrefix(args[1], "http") {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		}
-		rejectEx = args[1]
-		checker = true
-	}
-	comp.Reject = strings.Split(rejectEx, ",")
-	return checker, nil
+    if strings.Contains(args[0], "=") {
+        sli := strings.Split(args[0], "=")
+        if !CheckValidFlag(sli[0], flags) {
+            return false, errors.New("invalid flag -R || --reject")
+        }
+        if len(sli) != 2 || sli[1] == "" {
+            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+        }
+        rejectEx = sli[1]
+        checker = false
+
+    } else {
+        if !CheckValidFlag(args[0], flags) {
+            return false, errors.New("invalid flag -R || --reject")
+        }
+        if args[1] == "" || strings.HasPrefix(args[1], "http") {
+            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+        }
+        rejectEx = args[1]
+        checker = true
+    }
+
+    // Split and normalize: remove quotes, spaces, and leading '*' from each suffix
+    rawList := strings.Split(rejectEx, ",")
+    normalized := make([]string, 0, len(rawList))
+    for _, r := range rawList {
+        r = strings.TrimSpace(r)
+        r = strings.Trim(r, `"'`)           // remove quotes if any
+        r = strings.TrimPrefix(r, "*")      // remove leading '*'
+        r = strings.ToLower(r)              // normalize case
+        normalized = append(normalized, r)
+    }
+    comp.Reject = normalized
+
+    return checker, nil
 }
+
 
 func CatchTheRExcludedFolders(args []string, comp *FlagsComponents, flags []string) (bool, error) {
 	if !comp.isMirror {
 		return false, errors.New("flag --mirror is missing")
 	}
-	var ExcludFolfers string
+	var excludeEx string
 	var checker bool
+
 	if strings.Contains(args[0], "=") {
 		sli := strings.Split(args[0], "=")
 		if !CheckValidFlag(sli[0], flags) {
-			return false, errors.New("invalid flag -X || --exclud")
+			return false, errors.New("invalid flag -X || --exclude")
 		}
 		if len(sli) != 2 || sli[1] == "" {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
-		} else {
-			ExcludFolfers = sli[1]
-			checker = false
+			return false, errors.New("missing exclude paths while presence of the -X || --exclude flag")
 		}
+		excludeEx = sli[1]
+		checker = false
+
 	} else {
 		if !CheckValidFlag(args[0], flags) {
-			return false, errors.New("invalid flag -X || --exclud")
+			return false, errors.New("invalid flag -X || --exclude")
 		}
 		if args[1] == "" || strings.HasPrefix(args[1], "http") {
-			return false, errors.New("missing rejected extentions while presence of the -R || --reject flag")
+			return false, errors.New("missing exclude paths while presence of the -X || --exclude flag")
 		}
-		ExcludFolfers = args[1]
+		excludeEx = args[1]
 		checker = true
 	}
-	comp.Exclude = strings.Split(ExcludFolfers, ",")
+
+	rawList := strings.Split(excludeEx, ",")
+	normalized := make([]string, 0, len(rawList))
+	for _, r := range rawList {
+		r = strings.TrimSpace(r)
+		r = strings.Trim(r, `"'`) // remove quotes if any
+		if !strings.HasPrefix(r, "/") {
+			r = "/" + r
+		}
+		if !strings.HasSuffix(r, "/") {
+			r = r + "/"
+		}
+		normalized = append(normalized, r)
+	}
+	comp.Exclude = normalized
+
 	return checker, nil
 }
+
 
 func (c *FlagsComponents) Validate() error {
 	// Check for conflicting flags
@@ -203,10 +237,10 @@ func (c *FlagsComponents) Validate() error {
 }
 
 func logOrPrint(logger *log.Logger, background bool, message string) {
-	if background && logger != nil {
-		logger.Println(message)
+	if background {
+		logger.Printf("%s", message)
 	} else {
-		fmt.Println(message)
+		fmt.Printf("%s", message)
 	}
 }
 
@@ -239,19 +273,86 @@ func parseRateLimit(rateLimitStr string) (int64, error) {
 	return value * multiplier, nil
 }
 
-
 func formatSpeed(speedMBps float64) string {
-	// Cap extremely high speeds to avoid scientific notation
-	if speedMBps > 999.99 {
-		speedMBps = 999.99
-	}
-	if speedMBps < 0.001 {
-		speedMBps = 0.001
-	}
+	// // Cap extremely high speeds to avoid scientific notation
+	// if speedMBps > 999.99 {
+	// 	speedMBps = 999.99
+	// }
+	// if speedMBps < 0.001 {
+	// 	speedMBps = 0.001
+	// }
 
 	// Fixed logic: show KB/s when speed is LESS than 1 MB/s
 	if speedMBps < 1 {
-		return fmt.Sprintf("%.0f KB/s", speedMBps*1024)
+		// return fmt.Sprintf("%.0f KB/s", speedMBps*1024)
+		return fmt.Sprintf("%.2f KB/s", speedMBps*1024)
 	}
+	// return fmt.Sprintf("%.2f MB/s", speedMBps)
 	return fmt.Sprintf("%.2f MB/s", speedMBps)
+}
+
+func Create_Output_file(Overide bool, filename string) (*os.File, error) {
+	var out *os.File
+	var err error
+	if Overide {
+		out, err = os.Create(filename)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create file: %v", err)
+		}
+	} else {
+		_, err := os.Stat(filename)
+		if err != nil {
+			if os.IsNotExist(err) {
+				out, err = os.Create(filename)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create file: %v", err)
+				}
+			} else {
+				return nil, err
+			}
+		} else {
+			// File exists - create with number suffix
+			dir := filepath.Dir(filename)
+			ext := filepath.Ext(filename)
+			base := strings.TrimSuffix(filepath.Base(filename), ext)
+			i := 1
+			for {
+				if ext != "" {
+					filename = filepath.Join(dir, fmt.Sprintf("%s.%d%s", base, i, ext))
+				} else {
+					filename = filepath.Join(dir, fmt.Sprintf("%s.%d", base, i))
+				}
+
+				// Check if this numbered version exists
+				if _, err := os.Stat(filename); os.IsNotExist(err) {
+					// This name is available
+					out, err = os.Create(filename)
+					if err != nil {
+						return nil, fmt.Errorf("failed to create file: %v", err)
+					}
+					break
+				}
+				i += 1
+			}
+		}
+	}
+	return out, nil
+}
+
+func formatETA(d time.Duration) string {
+	if d < 0 {
+		return "0s"
+	}
+
+	hours := int(d.Hours())
+	minutes := int(d.Minutes()) % 60
+	seconds := int(d.Seconds()) % 60
+
+	if hours > 0 {
+		return fmt.Sprintf("%dh%02dm", hours, minutes)
+	} else if minutes > 0 {
+		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	} else {
+		return fmt.Sprintf("%ds", seconds)
+	}
 }

@@ -7,19 +7,6 @@ import (
 	// "syscall"
 )
 
-type FlagsComponents struct {
-	Links       []string
-	InputFile  string
-	OutputFile string
-	PathFile   string
-	RateLimite string
-	Exclude    []string
-	Reject     []string
-	isMirror   bool
-	Background bool
-	Convert    bool
-}
-
 func main() {
 	// // Handle SIGPIPE gracefully
 	// signal.Ignore(syscall.SIGPIPE)

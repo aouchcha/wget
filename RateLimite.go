@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"time"
@@ -75,5 +76,6 @@ func copyWithRateLimit(src io.Reader, dst io.Writer, rateLimit int64, total int6
 
 	// Final progress update
 	showProgress(written, total, filename, time.Since(startTime), logger, background)
+	fmt.Println()
 	return written, nil
 }

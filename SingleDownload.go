@@ -22,14 +22,20 @@ func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
 			filename = GetOutputFromUrl(link)
 		}
 
-		if c.PathFile != "" && c.OutputFile == "" {
+		if c.PathFile != "" {
 			filename = filepath.Join(c.PathFile, filename)
+			if strings.HasPrefix(filename, "~") {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("failed to get the home directory: %v", err)
+				}
+				filename = strings.ReplaceAll(filename, "~", homeDir)
+			}
 			if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 				return fmt.Errorf("failed to create directory: %v", err)
 			}
 		}
 
-		
 		err := Download(link, c, filename, logger, Overide)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -52,7 +58,7 @@ func GetOutputFromUrl(Link string) string {
 
 func Download(Link string, c *FlagsComponents, filename string, logger *log.Logger, Overide bool) error {
 	// Print timestamp and URL
-	logOrPrint(logger, c.Background, fmt.Sprintf("--%s--  %s", time.Now().Format("2006-01-02 15:04:05"), Link))
+	logOrPrint(logger, c.Background, fmt.Sprintf("--%s--  %s\n", time.Now().Format("2006-01-02 15:04:05"), Link))
 
 	// Parse URL to get host
 	url, err := url.Parse(Link)
@@ -64,13 +70,7 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 		return err
 	}
 
-	// if response.StatusCode != 200 {
-	// 	return errors.New("bad status")
-	// }
-
-	// Resolve hostname (simulate DNS lookup)
-
-	logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)...", url.Host, url.Host))
+	// Get the host name
 
 	// Look up IP address
 	ips, err := net.LookupIP(url.Host)
@@ -78,31 +78,39 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 		logOrPrint(logger, c.Background, "DNS resolution failed")
 		return fmt.Errorf("failed to resolve hostname: %v", err)
 	}
-
-	// Print first IP
-	if len(ips) > 0 {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Resolved to: %s", ips[0].String()))
+	// Print all the ips
+	var IpsTotal []string
+	for _, ip := range ips {
+		IpsTotal = append(IpsTotal, ip.String())
 	}
+	IpStr := strings.Join(IpsTotal, ", ")
+	logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)... %s\n", url.Host, url.Host, IpStr))
+	// if len(ips) > 0 {
+	// 	logOrPrint(logger, c.Background, fmt.Sprintf("Resolved to: %s", IpStr))
+	// }
 
 	// Print connecting message
 	port := "80"
 	if url.Scheme == "https" {
 		port = "443"
 	}
-
+	// if !c.Background {
+	// 	fmt.Printf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port)
+	// } else {
 	logOrPrint(logger, c.Background, fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
+	// }
 
 	startTime := time.Now()
 	defer response.Body.Close()
 
-	if !c.Background {
-		fmt.Printf("connected.\n")
-	} else {
-		logOrPrint(logger, c.Background, "Connected successfully")
-	}
+	// if !c.Background {
+	// 	fmt.Printf(" connected.")
+	// } else {
+	logOrPrint(logger, c.Background, " connected.\n")
+	// }
 
 	// Print HTTP request status
-	logOrPrint(logger, c.Background, fmt.Sprintf("HTTP request sent, awaiting response... %s", response.Status))
+	logOrPrint(logger, c.Background, fmt.Sprintf("HTTP request sent, awaiting response... %s\n", response.Status))
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("--%s--  Error %d: %s", time.Now().Format("2006-01-02 15:04:05"), response.StatusCode, response.Status)
 	}
@@ -115,9 +123,9 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 
 	if fileSize > 0 {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Length: %d [%s]", fileSize, contentType))
+		logOrPrint(logger, c.Background, fmt.Sprintf("Length: %d [%s]\n", fileSize, contentType))
 	} else {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Length: unspecified [%s]", contentType))
+		logOrPrint(logger, c.Background, fmt.Sprintf("Length: unspecified [%s]\n", contentType))
 	}
 
 	// Create directory if needed
@@ -126,51 +134,11 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 
 	// Create output file and ovrid the old if needed
-	var out *os.File
-	if Overide {
-		out, err = os.Create(filename)
-		if err != nil {
-			return fmt.Errorf("failed to create file: %v", err)
-		}
-	} else {
-		_, err := os.Stat(filename)
-		if err != nil {
-			if os.IsNotExist(err) {
-				out, err = os.Create(filename)
-				if err != nil {
-					return fmt.Errorf("failed to create file: %v", err)
-				}
-			} else {
-				return err
-			}
-		} else {
-			// File exists - create with number suffix
-			dir := filepath.Dir(filename)
-			ext := filepath.Ext(filename)
-			base := strings.TrimSuffix(filepath.Base(filename), ext)
-			i := 1
-			for {
-				if ext != "" {
-					filename = filepath.Join(dir, fmt.Sprintf("%s.%d%s", base, i, ext))
-				} else {
-					filename = filepath.Join(dir, fmt.Sprintf("%s.%d", base, i))
-				}
-
-				// Check if this numbered version exists
-				if _, err := os.Stat(filename); os.IsNotExist(err) {
-					// This name is available
-					out, err = os.Create(filename)
-					if err != nil {
-						return fmt.Errorf("failed to create file: %v", err)
-					}
-					logOrPrint(logger, c.Background, fmt.Sprintf("File renamed to: '%s'", filepath.Base(filename)))
-					break
-				}
-				i += 1
-			}
-		}
+	OutputFile, err := Create_Output_file(Overide, filename)
+	if err != nil {
+		return err
 	}
-	defer out.Close()
+	defer OutputFile.Close()
 
 	logOrPrint(logger, c.Background, fmt.Sprintf("Saving to: '%s'\n", filepath.Base(filename)))
 
@@ -181,16 +149,11 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 	var downloaded int64
 	if rate > 0 {
-		downloaded, err = copyWithRateLimit(response.Body, out, rate, fileSize, filename, logger, c.Background)
+		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background)
 	} else {
 		// Show progress regardless of whether we know file size
-		downloaded, err = copyWithProgress(response.Body, out, fileSize, filepath.Base(filename), logger, c.Background)
+		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background)
 	}
-	// else {
-	// 	// implement the code for -B flag
-	// 	downloaded, err = io.Copy(out, response.Body)
-	// }
-	// }
 
 	if err != nil {
 		return fmt.Errorf("download failed: %v", err)
@@ -200,8 +163,7 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	duration := time.Since(startTime)
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024) // MB/s
 
-	// Print completion message
-	logOrPrint(logger, c.Background, fmt.Sprintf("\n%s (%s) - '%s' saved [%d]",
+	logOrPrint(logger, c.Background, fmt.Sprintf("%s (%s) - '%s' saved [%d]\n",
 		time.Now().Format("2006-01-02 15:04:05"),
 		formatSpeed(speed),
 		filepath.Base(filename),
@@ -216,7 +178,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 
 	startTime := time.Now()
 	lastUpdate := time.Now()
-	// n := 0
+
 	for {
 		number_of_bytes_readed, err := src.Read(buf)
 		if number_of_bytes_readed > 0 {
@@ -233,7 +195,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 
 			// Update progress more frequently - every 10ms or when finished
 			now := time.Now()
-			if now.Sub(lastUpdate) > 1000*time.Millisecond || err == io.EOF {
+			if now.Sub(lastUpdate) > 500*time.Millisecond || err == io.EOF {
 				showProgress(written, total, filename, time.Since(startTime), logger, background)
 				lastUpdate = now
 			}
@@ -249,6 +211,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 
 	// Final progress update
 	showProgress(written, total, filename, time.Since(startTime), logger, background)
+	fmt.Println()
 	return written, nil
 }
 
@@ -261,14 +224,12 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 	// 		logOrPrint(logger, background, fmt.Sprintf("Downloaded: %.2fMB, Speed: %.2fMB/s",
 	// 			float64(downloaded)/(1024*1024), speed))
 	// 	}
-	// 	return
 	// }
 
-	// Calculate speed in MB/s with proper bounds checking
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
 
 	// Create progress bar similar to wget
-	barWidth := 70 // Reduced width to fit better
+	barWidth := 80 // Reduced width to fit better
 	var progressBar string
 
 	if total > 0 {
@@ -293,21 +254,50 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 	if downloaded/(1024*1024) > 1 {
 		filesize = fmt.Sprintf("%.2fM", float64(downloaded)/(1024*1024))
 	} else {
-		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024*1024))
+		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024))
 	}
-	fmt.Println("bbbbbbbbbb", background)
-	logOrPrint(logger, background, fmt.Sprintf("\r%-20s [%s] %s %s", filename, progressBar, filesize, formatSpeed(speed)))
+	// fmt.Println("bbbbbbbbbb", background)
+	// if !background {
+	// 	fmt.Printf("\r%-20s [%s] %s %s", filename, progressBar, filesize, formatSpeed(speed))
+	// 	// fmt.Printf("\r %s %s %s %s", filename, progressBar, filesize, formatSpeed(speed))
+	// } else {
+	// fmt.Println("hanni")
+	// fmt.Println("")
+	if background {
+		remaining := total - downloaded
+		// remaining_Sec := time.Duration(float64(remaining)/speed) * time.Second
+		// fmt.Println(time.Duration(float64(remaining)/speed).Seconds() * 10)
+		remainingStr := formatETA(time.Duration(float64(remaining)/speed) * 10)
+		logOrPrint(logger, background, fmt.Sprintf("%dK %s %.0f%% %s %s", downloaded, strings.ReplaceAll(progressBar, "=", "."), float64(downloaded*100)/float64(total), formatSpeed(speed), remainingStr))
+	} else {
+		logOrPrint(logger, background, fmt.Sprintf("\r%s %.0f%% [%s] %s %s", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
+	}
+	// }
 
 	// Add timing info
 	if total > 0 && downloaded >= total {
 		// Complete - show "in Xs"
-		logOrPrint(logger, background, fmt.Sprintf(" in %.1fs", duration.Seconds()))
-	} else if total > 0 && downloaded < total && speed > 0 {
-		// Show ETA
-		remaining := total - downloaded
-		eta := time.Duration(float64(remaining)/speed) * 1000
-		logOrPrint(logger, background, fmt.Sprintf(" eta %.1f", eta.Seconds()))
-	}
+		// if !background {
+		// 	fmt.Printf(" in %.1fs", duration.Seconds())
+		// } else {
+		// if {
+			logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
+		// }
+		// }
+	} 
+	// else if total > 0 && downloaded < total && speed > 0 {
+	// 	// Show ETA
+	// 	// remaining := total - downloaded
+	// 	// eta := time.Duration(float64(remaining)/speed) * 1000
+	// 	// if !background {
+	// 	// 	fmt.Printf(" eta %.1f", eta.Seconds())
+	// 	// } else {
+	// 	// logOrPrint(logger, background, fmt.Sprintf(" in %.1fs", duration.Seconds()))
+	// 	// if background {
+	// 	// 	logOrPrint(logger, background, fmt.Sprintf(" %.2f", eta.Seconds()))
+	// 	// }
+	// 	// }
+	// }
 
 	os.Stdout.Sync()
 }

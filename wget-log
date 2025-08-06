@@ -1,15 +1,0 @@
-start at 2025-08-05 08:05:09
---2025-08-05 08:05:09--  https://assets.01-edu.org/wgetDataSamples/20MB.zip
-Resolving assets.01-edu.org (assets.01-edu.org)...
-Resolved to: 164.132.200.15
-Connecting to assets.01-edu.org (assets.01-edu.org)|164.132.200.15|:443...
-Connected successfully
-HTTP request sent, awaiting response... 200 OK
-Length: 20900490 [application/zip]
-File renamed to: '20MB.6.zip'
-Saving to: '20MB.6.zip'
-
-20MB.6.zip           [======================================================================] 19.93M 28.42 MB/s
- in 0.7s
-
-2025-08-05 08:05:10 (28.42 MB/s) - '20MB.6.zip' saved [20900490]
