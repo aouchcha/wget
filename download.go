@@ -31,7 +31,10 @@ func DownloadFiles(args *FlagsComponents) error {
 
 	if args.InputFile != "" {
 		// Batch download from file
-		// return args.executeBatchDownload(logger)
+		err := HandleMultipleDownloads(args.InputFile)
+		if err != nil {
+			return err
+		}
 	} else if args.isMirror {
 		for _, link := range args.Links {
 
