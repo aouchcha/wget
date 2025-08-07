@@ -29,8 +29,8 @@ func parsing(args []string, components *FlagsComponents) error {
 				i += 2
 				continue
 			}
-		} else if strings.HasPrefix(args[i], "-i") && i <= len(args)-2 {
-			checker, err := CatchInput(args[i:i+2], components, flags)
+		} else if strings.HasPrefix(args[i], "-i") {
+			checker, err := CatchInput(args[i:], components, flags)
 			if err != nil {
 				return err
 			}
@@ -84,18 +84,14 @@ func parsing(args []string, components *FlagsComponents) error {
 			if !CheckValidFlag(args[i], flags) {
 				return fmt.Errorf("invalid flag %s", args[i])
 			}
-		}else {
+		} else {
 			if strings.HasPrefix(args[i], "http") {
 				components.Links = append(components.Links, args[i])
-			}else {
-				components.Links = append(components.Links, fmt.Sprintf("http://%s/",args[i]))
+			} else {
+				components.Links = append(components.Links, fmt.Sprintf("http://%s/", args[i]))
 			}
 		}
 		i += 1
 	}
-	// if len(components.Links) == 0 {
-	// 	return errors.New("you don't provide the program with link to download from it")
-	// }
-	// fmt.Println(*components)
 	return nil
 }

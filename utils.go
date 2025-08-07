@@ -41,6 +41,7 @@ func CatchOutputFile(args []string, comp *FlagsComponents, flags []string) (bool
 }
 
 func CatchInput(args []string, comp *FlagsComponents, flags []string) (bool, error) {
+	// fmt.Println(args)
 	if strings.Contains(args[0], "=") {
 		sli := strings.Split(args[0], "=")
 		if !CheckValidFlag(sli[0], flags) {
@@ -249,13 +250,10 @@ func parseRateLimit(rateLimitStr string) (int64, error) {
 		return 0, nil
 	}
 
-	// Remove whitespace and convert to lowercase
 	rateLimitStr = strings.ToLower(strings.TrimSpace(rateLimitStr))
 
-	// Default multiplier (bytes)
 	var multiplier int64 = 1
 
-	// Check for suffix and remove it
 	if strings.HasSuffix(rateLimitStr, "k") {
 		multiplier = 1024
 		rateLimitStr = rateLimitStr[:len(rateLimitStr)-1]
@@ -274,14 +272,6 @@ func parseRateLimit(rateLimitStr string) (int64, error) {
 }
 
 func formatSpeed(speedMBps float64) string {
-	// // Cap extremely high speeds to avoid scientific notation
-	// if speedMBps > 999.99 {
-	// 	speedMBps = 999.99
-	// }
-	// if speedMBps < 0.001 {
-	// 	speedMBps = 0.001
-	// }
-
 	// Fixed logic: show KB/s when speed is LESS than 1 MB/s
 	if speedMBps < 1 {
 		// return fmt.Sprintf("%.0f KB/s", speedMBps*1024)

@@ -69,10 +69,6 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	if err != nil {
 		return err
 	}
-
-	// Get the host name
-
-	// Look up IP address
 	ips, err := net.LookupIP(url.Host)
 	if err != nil {
 		logOrPrint(logger, c.Background, "DNS resolution failed")
@@ -85,31 +81,16 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 	IpStr := strings.Join(IpsTotal, ", ")
 	logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)... %s\n", url.Host, url.Host, IpStr))
-	// if len(ips) > 0 {
-	// 	logOrPrint(logger, c.Background, fmt.Sprintf("Resolved to: %s", IpStr))
-	// }
-
-	// Print connecting message
 	port := "80"
 	if url.Scheme == "https" {
 		port = "443"
 	}
-	// if !c.Background {
-	// 	fmt.Printf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port)
-	// } else {
 	logOrPrint(logger, c.Background, fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
-	// }
 
 	startTime := time.Now()
 	defer response.Body.Close()
 
-	// if !c.Background {
-	// 	fmt.Printf(" connected.")
-	// } else {
 	logOrPrint(logger, c.Background, " connected.\n")
-	// }
-
-	// Print HTTP request status
 	logOrPrint(logger, c.Background, fmt.Sprintf("HTTP request sent, awaiting response... %s\n", response.Status))
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("--%s--  Error %d: %s", time.Now().Format("2006-01-02 15:04:05"), response.StatusCode, response.Status)
@@ -128,12 +109,10 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 		logOrPrint(logger, c.Background, fmt.Sprintf("Length: unspecified [%s]\n", contentType))
 	}
 
-	// Create directory if needed
 	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 		return fmt.Errorf("failed to create directory: %v", err)
 	}
 
-	// Create output file and ovrid the old if needed
 	OutputFile, err := Create_Output_file(Overide, filename)
 	if err != nil {
 		return err
@@ -141,25 +120,21 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	defer OutputFile.Close()
 
 	logOrPrint(logger, c.Background, fmt.Sprintf("Saving to: '%s'\n", filepath.Base(filename)))
-
-	// Download with progress - ALWAYS show progress unless in background mode
 	rate, err := parseRateLimit(c.RateLimite)
 	if err != nil {
 		return err
 	}
 	var downloaded int64
 	if rate > 0 {
-		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background)
+		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background, Link)
 	} else {
-		// Show progress regardless of whether we know file size
-		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background)
+		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background, Link)
 	}
 
 	if err != nil {
 		return fmt.Errorf("download failed: %v", err)
 	}
 
-	// Calculate download speed and time
 	duration := time.Since(startTime)
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024) // MB/s
 
@@ -172,7 +147,7 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	return nil
 }
 
-func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool) (int64, error) {
+func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool, Link string) (int64, error) {
 	var written int64
 	buf := make([]byte, 32*1024)
 
@@ -192,11 +167,10 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 			if number_of_bytes_readed != number_of_byte_writed {
 				return written, io.ErrShortWrite
 			}
-
-			// Update progress more frequently - every 10ms or when finished
 			now := time.Now()
-			if now.Sub(lastUpdate) > 500*time.Millisecond || err == io.EOF {
-				showProgress(written, total, filename, time.Since(startTime), logger, background)
+			//here
+			if now.Sub(lastUpdate) > 10*time.Millisecond || err == io.EOF {
+				showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
 				lastUpdate = now
 			}
 		}
@@ -210,30 +184,20 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 	}
 
 	// Final progress update
-	showProgress(written, total, filename, time.Since(startTime), logger, background)
+	if !background {
+		showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
+	}
 	fmt.Println()
 	return written, nil
 }
 
-func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool) {
-	// If in background mode, log progress periodically instead of showing progress bar
-	// if background {
-	// 	// Log progress every MB or when complete
-	// 	if downloaded%(1024*1024) == 0 || (total > 0 && downloaded >= total) {
-	// 		speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-	// 		logOrPrint(logger, background, fmt.Sprintf("Downloaded: %.2fMB, Speed: %.2fMB/s",
-	// 			float64(downloaded)/(1024*1024), speed))
-	// 	}
-	// }
-
+func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool, Link string) {
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-
 	// Create progress bar similar to wget
 	barWidth := 80 // Reduced width to fit better
 	var progressBar string
 
 	if total > 0 {
-		// Known file size - show normal progress bar
 		percentage := float64(downloaded) / float64(total) * 100
 		filled := int(percentage / 100 * float64(barWidth))
 
@@ -243,61 +207,25 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 			progressBar += strings.Repeat(" ", barWidth-filled-1)
 		}
 	} else {
-		// Unknown file size - show indeterminate progress (like wget's <=>)
-		// Create a moving indicator
 		pos := int(time.Now().UnixMilli()/100) % (barWidth - 6)
 		progressBar = strings.Repeat(" ", pos) + "  <=>  " + strings.Repeat(" ", barWidth-pos-6)
 	}
 
-	// downloaded file size
 	var filesize string
 	if downloaded/(1024*1024) > 1 {
 		filesize = fmt.Sprintf("%.2fM", float64(downloaded)/(1024*1024))
 	} else {
 		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024))
 	}
-	// fmt.Println("bbbbbbbbbb", background)
-	// if !background {
-	// 	fmt.Printf("\r%-20s [%s] %s %s", filename, progressBar, filesize, formatSpeed(speed))
-	// 	// fmt.Printf("\r %s %s %s %s", filename, progressBar, filesize, formatSpeed(speed))
-	// } else {
-	// fmt.Println("hanni")
-	// fmt.Println("")
 	if background {
 		remaining := total - downloaded
-		// remaining_Sec := time.Duration(float64(remaining)/speed) * time.Second
-		// fmt.Println(time.Duration(float64(remaining)/speed).Seconds() * 10)
 		remainingStr := formatETA(time.Duration(float64(remaining)/speed) * 10)
 		logOrPrint(logger, background, fmt.Sprintf("%dK %s %.0f%% %s %s", downloaded, strings.ReplaceAll(progressBar, "=", "."), float64(downloaded*100)/float64(total), formatSpeed(speed), remainingStr))
 	} else {
 		logOrPrint(logger, background, fmt.Sprintf("\r%s %.0f%% [%s] %s %s", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
 	}
-	// }
-
-	// Add timing info
 	if total > 0 && downloaded >= total {
-		// Complete - show "in Xs"
-		// if !background {
-		// 	fmt.Printf(" in %.1fs", duration.Seconds())
-		// } else {
-		// if {
-			logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
-		// }
-		// }
-	} 
-	// else if total > 0 && downloaded < total && speed > 0 {
-	// 	// Show ETA
-	// 	// remaining := total - downloaded
-	// 	// eta := time.Duration(float64(remaining)/speed) * 1000
-	// 	// if !background {
-	// 	// 	fmt.Printf(" eta %.1f", eta.Seconds())
-	// 	// } else {
-	// 	// logOrPrint(logger, background, fmt.Sprintf(" in %.1fs", duration.Seconds()))
-	// 	// if background {
-	// 	// 	logOrPrint(logger, background, fmt.Sprintf(" %.2f", eta.Seconds()))
-	// 	// }
-	// 	// }
-	// }
-
+		logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
+	}
 	os.Stdout.Sync()
 }

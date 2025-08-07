@@ -57,7 +57,6 @@ func HandleMultipleDownloads(filePath string) error{
 	}
 	wg.Wait()
 
-	fmt.Println()
 	fmt.Println("Download finished: ", urls)
 	return nil
 }
