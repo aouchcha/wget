@@ -2,29 +2,35 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 )
 
-func HandleBackgroundDownloaded(Link string, logger *log.Logger) {
-	fmt.Println("hqnni")
+func HandleBackgroundDownload(Link string) error {
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to locate binary:", err)
-		return
+		return fmt.Errorf("%s", err)
 	}
-	cmd := exec.Command(exe, Link)
+
 	
-	cmd.Stdout = logger.Writer()
-	cmd.Stderr = logger.Writer()
+
+	cmd := exec.Command(exe, Link)
+	logFile, err := Create_Output_file(false, "wget-log")
+	if err != nil {
+		// fmt.Fprintln(os.Stderr, "Failed to create wget-log:", err)
+		return fmt.Errorf("%s", err)
+	}
+	cmd.Stdout = logFile
+	cmd.Stderr = logFile
 
 	err = cmd.Start()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to run in background:", err)
-		return
+		// fmt.Fprintln(os.Stderr, "Failed to run in background:", err)
+		return fmt.Errorf("%s", err)
+
 	}
 
 	fmt.Printf("Continuing in background, pid %d.\n", cmd.Process.Pid)
-	// fmt.Println(`Output will be written to "wget-log".`)
+	fmt.Printf("Output will be written to '%s'.\n", logFile.Name())
+	return nil
 }

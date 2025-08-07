@@ -184,8 +184,6 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	if rate > 0 {
 		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background, Link)
 	} else {
-		fmt.Println()
-		fmt.Println("wa zaaaabi")
 		// Show progress regardless of whether we know file size
 		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background, Link)
 	}
@@ -255,13 +253,13 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 
 func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool, Link string) {
 	// If in background mode, log progress periodically instead of showing progress bar
-	if background {
-		fmt.Println(background)
-		fmt.Println("hqqqqqqqqqqqqni")
-		// Log progress every MB or when complete
-		HandleBackgroundDownloaded(Link, logger)
-		return
-	}
+	// if background {
+	// 	fmt.Println(background)
+	// 	fmt.Println("hqqqqqqqqqqqqni")
+	// 	// Log progress every MB or when complete
+	// 	HandleBackgroundDownload(Link, logger)
+	// 	return
+	// }
 
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
 
