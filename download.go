@@ -38,7 +38,7 @@ func DownloadFiles(args *FlagsComponents) error {
 			args.NewMirrorConfig(link)
 
 			if !args.Background {
-				logStart(link)
+				logStart()
 			}
 			if err := args.crawl(link,0); err != nil {
 				logError(err.Error())
