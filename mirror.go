@@ -173,7 +173,7 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 	}
 
 	if m.Convert && strings.Contains(contentType, "text/html") {
-		convertedBody, err := m.convertLinks(body, u, localPath)
+		convertedBody, err := m.convertLinks(body, u)
 		if err != nil {
 			logError(fmt.Sprintf("Failed to convert links in %s: %v", localPath, err))
 		} else {
@@ -290,7 +290,7 @@ func (m *FlagsComponents) GetLocalPath(u *url.URL, contentType string) (string, 
 	return filepath.Join(m.BaseDir, u.Host, path), nil
 }
 
-func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, localPath string) ([]byte, error) {
+func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL) ([]byte, error) {
 	doc, err := html.Parse(bytes.NewReader(htmlContent))
 	if err != nil {
 		return nil, err
@@ -306,7 +306,7 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 					if attr.Key == key {
 						switch key {
 						case "style":
-							_, n.Attr[i].Val = m.convertURLsFromCSS(n.Attr[i].Val, pageURL)
+							_, n.Attr[i].Val = m.convertURLsFromCSS(n.Attr[i].Val)
 						default:
 							n.Attr[i].Val = makeAbsoluteURL(attr.Val, pageURL)
 						}
@@ -315,7 +315,7 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 			}
 		case html.TextNode:
 			if n.Data != "" {
-				_, n.Data = m.convertURLsFromCSS(n.Data, pageURL)
+				_, n.Data = m.convertURLsFromCSS(n.Data)
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
@@ -352,7 +352,7 @@ func (m *FlagsComponents) extractURLsFromCSS(cssContent string, pageURL *url.URL
 	return urls, cssContent
 }
 
-func (m *FlagsComponents) convertURLsFromCSS(cssContent string, pageURL *url.URL) ([]string, string) {
+func (m *FlagsComponents) convertURLsFromCSS(cssContent string) ([]string, string) {
 	var urls []string
 	for _, pattern := range cssURLPatterns {
 		matches := pattern.FindAllStringSubmatch(cssContent, -1)
@@ -405,7 +405,7 @@ func logSaving(path string) {
 	fmt.Fprintf(Stdout, "saving file to: %s\n", path)
 }
 
-func logProgress(downloaded, total int64, speed float64, elapsed time.Duration) {
+func logProgress(downloaded, total int64, speed float64) {
 	dl := humanBytes(float64(downloaded))
 	tot := humanBytes(float64(total))
 	percent := 0.0
@@ -442,16 +442,9 @@ func logFinish(url string) {
 	fmt.Fprintf(Stdout, "finished at %s\n", t)
 }
 
-func logBackground() {
-	fmt.Fprintf(Stdout, "Output will be written to \"wget-log\".\n")
-}
 
 func logError(msg string) {
 	fmt.Fprintf(Stderr, "ERROR: %s\n", msg)
-}
-
-func openLogFile() (*os.File, error) {
-	return os.OpenFile("wget-log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 }
 
 // Utility functions for human-readable sizes
@@ -494,7 +487,7 @@ func (p *ProgressReader) Read(buf []byte) (int, error) {
 		p.Downloaded += int64(n)
 		elapsed := time.Since(p.Start)
 		speed := float64(p.Downloaded) / elapsed.Seconds()
-		logProgress(p.Downloaded, p.Total, speed, elapsed)
+		logProgress(p.Downloaded, p.Total, speed)
 	}
 	return n, err
 }
