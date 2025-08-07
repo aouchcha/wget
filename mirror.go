@@ -296,7 +296,7 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 					if attr.Key == key {
 						switch key {
 						case "style":
-							_, n.Attr[i].Val = m.extractURLsFromCSS(n.Attr[i].Val, pageURL)
+							_, n.Attr[i].Val = m.convertURLsFromCSS(n.Attr[i].Val, pageURL)
 						default:
 							n.Attr[i].Val = makeAbsoluteURL(attr.Val, pageURL)
 						}
@@ -306,7 +306,7 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 
 		case html.TextNode:
 			if n.Data != "" {
-				_, n.Data = m.extractURLsFromCSS(n.Data, pageURL)
+				_, n.Data = m.convertURLsFromCSS(n.Data, pageURL)
 			}
 		}
 
@@ -334,7 +334,28 @@ func (m *FlagsComponents) extractURLsFromCSS(cssContent string, pageURL *url.URL
 			if len(match) >= 2 {
 				old := strings.TrimSpace(match[1])
 				url := makeAbsoluteURL(old, pageURL)
+				// url := old
 				cssContent = strings.Replace(cssContent, old, url, 1)
+				if url != "" {
+					urls = append(urls, url)
+				}
+			}
+		}
+	}
+
+	return urls, cssContent
+}
+
+func (m *FlagsComponents) convertURLsFromCSS(cssContent string, pageURL *url.URL) ([]string, string) {
+	var urls []string
+	for _, pattern := range cssURLPatterns {
+		matches := pattern.FindAllStringSubmatch(cssContent, -1)
+		for _, match := range matches {
+			if len(match) >= 2 {
+				url := strings.TrimPrefix(strings.TrimSpace(match[1]), "/")
+				// url := makeAbsoluteURL(old, pageURL)
+				// url := old
+				cssContent = strings.Replace(cssContent, strings.TrimSpace(match[1]), url, 1)
 				if url != "" {
 					urls = append(urls, url)
 				}
@@ -354,125 +375,3 @@ func makeAbsoluteURL(linkURL string, base_url *url.URL) string {
 	absolute := base_url.ResolveReference(link)
 	return absolute.String()
 }
-
-// convertSingleURL converts a single URL to relative local path if possible
-// func (m *FlagsComponents) convertSingleURL(rawurl string, pageURL *url.URL, localPath string) string {
-// 	parsedURL, err := pageURL.Parse(rawurl)
-// 	if err != nil {
-// 		return rawurl
-// 	}
-
-// 	if parsedURL.Scheme == "" && (parsedURL.Host == "" || parsedURL.Host == pageURL.Host) {
-// 		localFilePath, err := m.GetLocalPath(parsedURL, "")
-// 		if err != nil {
-// 			return rawurl
-// 		}
-// 		rel, err := filepath.Rel(filepath.Dir(localPath), localFilePath)
-// 		if err != nil {
-// 			return rawurl
-// 		}
-
-// 		// Convert Windows paths to slashes for URLs
-// 		rel = filepath.ToSlash(rel)
-// 		return rel
-// 	}
-// 	return rawurl
-// }
-// convertCSSURLs rewrites url(...) inside CSS style attribute strings
-
-// func (m *FlagsComponents) convertCSSURLs(styleVal string, pageURL *url.URL, localPath string) string {
-// 	const prefix = "url("
-// 	const suffix = ")"
-
-// 	// Replace all url(...) with converted paths
-// 	replacer := func(match string) string {
-// 		trimmed := strings.TrimPrefix(match, prefix)
-// 		trimmed = strings.TrimSuffix(trimmed, suffix)
-// 		trimmed = strings.Trim(trimmed, `"'`)
-
-// 		converted := m.convertSingleURL(trimmed, pageURL, localPath)
-// 		return prefix + `"` + converted + `"` + suffix
-// 	}
-
-// 	// This is a simple way, you could do regex or manual search
-// 	// Here we replace all occurrences of url(...) in the style string
-// 	var result strings.Builder
-// 	remaining := styleVal
-// 	for {
-// 		idx := strings.Index(remaining, prefix)
-// 		if idx == -1 {
-// 			result.WriteString(remaining)
-// 			break
-// 		}
-// 		result.WriteString(remaining[:idx])
-// 		remaining = remaining[idx:]
-// 		endIdx := strings.Index(remaining, suffix)
-// 		if endIdx == -1 {
-// 			// malformed, just append the rest
-// 			result.WriteString(remaining)
-// 			break
-// 		}
-
-// 		urlFunc := remaining[:endIdx+len(suffix)]
-// 		converted := replacer(urlFunc)
-// 		result.WriteString(converted)
-// 		remaining = remaining[endIdx+len(suffix):]
-// 	}
-
-// 	return result.String()
-// }
-
-// extractURLs handles normal or srcset URLs
-// func (m *FlagsComponents) extractURLs(val string, base *url.URL, seen map[string]struct{}, isSrcSet bool) {
-// 	if isSrcSet {
-// 		parts := strings.Split(val, ",")
-// 		for _, part := range parts {
-// 			part = strings.TrimSpace(part)
-// 			if part == "" {
-// 				continue
-// 			}
-// 			urlPart := strings.Fields(part)[0]
-// 			m.addLink(urlPart, base, seen)
-// 		}
-// 	} else {
-// 		m.addLink(val, base, seen)
-// 	}
-// }
-
-// addLink resolves and deduplicates
-// func (m *FlagsComponents) addLink(rawURL string, base *url.URL, seen map[string]struct{}) {
-// 	u, err := base.Parse(rawURL)
-// 	if err != nil {
-// 		return
-// 	}
-// 	abs := u.String()
-// 	seen[abs] = struct{}{}
-// }
-
-// extractCSSLinks finds url(...) in CSS
-
-// func (m *FlagsComponents) ParseAndDownload() error {
-// 	// if m.Background {
-// 	// 	logBackground()
-// 	// 	// redirect output to log file
-// 	// 	if file, err := openLogFile(); err == nil {
-// 	// 		Stdout = file
-// 	// 		Stderr = file
-// 	// 	}
-// 	// }
-
-// 	// logStart(pageURL)
-
-// 	// u, err := url.Parse(pageURL)
-// 	// if err != nil {
-// 	// 	logError(fmt.Sprintf("Invalid URL: %v", err))
-// 	// 	return err
-// 	// }
-
-// 	if err := m.crawl(0); err != nil {
-// 		return err
-// 	}
-
-// 	// logFinish(pageURL)
-// 	return nil
-// }
