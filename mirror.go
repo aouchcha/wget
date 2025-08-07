@@ -38,7 +38,7 @@ type FlagsComponents struct {
 	// wg         sync.WaitGroup
 }
 
-var cssURLRegex = regexp.MustCompile(`url\(['"]?([^'")]+)['"]?\)`)
+var cssURLRegex = regexp.MustCompile(`(?i)url\((?:'([^']*)'|"([^"]*)"|([^)]*))\)`)
 
 // NewMirrorConfig initializes config with root domain
 func (m *FlagsComponents) NewMirrorConfig(rootURL string) error {
@@ -250,6 +250,19 @@ func (m *FlagsComponents) crawl(u *url.URL, depth int) error {
 					if attr.Key == "style" {
 						matches := cssURLRegex.FindAllStringSubmatch(attr.Val, -1)
 						for _, match := range matches {
+							if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
+								m.addLink(match[1], baseURL, seen)
+							}
+						}
+					}
+				}
+
+				// Extract from <style>...</style> tags
+				if n.Data == "style" && n.FirstChild != nil {
+					css := n.FirstChild.Data
+					matches := cssURLRegex.FindAllStringSubmatch(css, -1)
+					for _, match := range matches {
+						if len(match) > 1 && strings.TrimSpace(match[1]) != "" {
 							m.addLink(match[1], baseURL, seen)
 						}
 					}
@@ -259,6 +272,7 @@ func (m *FlagsComponents) crawl(u *url.URL, depth int) error {
 				extract(c)
 			}
 		}
+
 		extract(doc)
 
 		// Download found links
@@ -393,7 +407,7 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 						if key == "srcset" || key == "data-srcset" {
 							n.Attr[i].Val = m.convertSrcset(attr.Val, pageURL, localPath)
 						} else if key == "style" {
-							n.Attr[i].Val = m.convertCSSURLs(attr.Val, pageURL, localPath)
+							n.Attr[i].Val = m.rewriteCSSURLs(attr.Val, pageURL, localPath)
 						} else {
 							n.Attr[i].Val = m.convertSingleURL(attr.Val, pageURL, localPath)
 						}
@@ -442,12 +456,23 @@ func (m *FlagsComponents) convertSingleURL(rawurl string, pageURL *url.URL, loca
 
 		// Convert Windows paths to slashes for URLs
 		rel = filepath.ToSlash(rel)
+
+		// If relative path starts with "/", replace it with "./"
+		if strings.HasPrefix(rel, "/") {
+			rel = "." + rel
+		} else if !strings.HasPrefix(rel, ".") {
+			// If it doesn't start with "." or "/", prefix "./"
+			rel = "./" + rel
+		}
+
 		return rel
 	}
 
 	// External URLs or others left unchanged
 	return rawurl
 }
+
+
 
 // convertSrcset handles rewriting of multiple URLs in srcset attributes
 func (m *FlagsComponents) convertSrcset(val string, pageURL *url.URL, localPath string) string {
@@ -510,4 +535,20 @@ func (m *FlagsComponents) convertCSSURLs(styleVal string, pageURL *url.URL, loca
 	}
 
 	return result.String()
+}
+
+
+// Helper function to rewrite url(...) in a CSS string
+func (m *FlagsComponents) rewriteCSSURLs(css string, pageURL *url.URL, localPath string) string {
+	cssURLRegex := regexp.MustCompile(`(?i)url\((['"]?)([^'")]+)\1\)`)
+	return cssURLRegex.ReplaceAllStringFunc(css, func(match string) string {
+		matches := cssURLRegex.FindStringSubmatch(match)
+		if len(matches) < 3 {
+			return match
+		}
+		quote := matches[1]
+		original := matches[2]
+		converted := m.convertSingleURL(original, pageURL, localPath)
+		return fmt.Sprintf("url(%s%s%s)", quote, converted, quote)
+	})
 }
