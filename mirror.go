@@ -1,4 +1,3 @@
-// mirror.go
 package main
 
 import (
@@ -17,6 +16,7 @@ import (
 	"golang.org/x/net/html"
 )
 
+// FlagsComponents holds mirroring config & state
 type FlagsComponents struct {
 	Links        []string
 	InputFile    string
@@ -79,9 +79,16 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 	if depth >= m.MaxDepth {
 		return nil
 	}
-	url, err := url.Parse(absURL)
-	if err != nil || url.Host != m.routHost {
+
+	u, err := url.Parse(absURL)
+	if err != nil {
+		logError(fmt.Sprintf("Invalid URL %s: %v", absURL, err))
 		return err
+	}
+
+	if m.OnlySameHost && u.Host != m.routHost {
+		// Skip external host
+		return nil
 	}
 
 	m.visitedMu.Lock()
@@ -92,26 +99,29 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 	m.visited[absURL] = struct{}{}
 	m.visitedMu.Unlock()
 
+	// Reject by extension
 	for _, ext := range m.Reject {
-		if strings.HasSuffix(strings.ToLower(url.Path), strings.ToLower(ext)) {
+		if strings.HasSuffix(strings.ToLower(u.Path), strings.ToLower(ext)) {
 			fmt.Printf("[INFO] Skipping %s due to reject rule (%s)\n", absURL, ext)
 			return nil
 		}
 	}
 
+	// Exclude by path prefix
 	for _, prefix := range m.Exclude {
-		if strings.HasPrefix(url.Path, prefix) {
+		if strings.HasPrefix(u.Path, prefix) {
 			fmt.Printf("[INFO] Skipping %s due to exclude path prefix (%s)\n", absURL, prefix)
 			return nil
 		}
 	}
+
+	logStart()
 
 	req, err := http.NewRequest("GET", absURL, nil)
 	if err != nil {
 		return err
 	}
 
-	// Set a real User-Agent
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Wget/1.21)")
 	resp, err := m.Client.Do(req)
 	if err != nil {
@@ -120,15 +130,15 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 	}
 	defer resp.Body.Close()
 
+	logRequest(resp.Status)
+
 	if resp.StatusCode != http.StatusOK {
 		logError(fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status))
 		return fmt.Errorf("failed: %s", resp.Status)
 	}
 
-	logRequest(resp.Status)
-
 	contentType := resp.Header.Get("Content-Type")
-	localPath, err := m.GetLocalPath(url, contentType)
+	localPath, err := m.GetLocalPath(u, contentType)
 	if err != nil {
 		logError(fmt.Sprintf("Failed to determine path for %s: %v", absURL, err))
 		return err
@@ -139,13 +149,20 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 		return err
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	progressReader := &ProgressReader{
+		Reader: resp.Body,
+		Total:  resp.ContentLength,
+		URL:    absURL,
+		Start:  time.Now(),
+	}
+
+	body, err := io.ReadAll(progressReader)
+	fmt.Println() // newline after progress bar
 	if err != nil {
 		logError(fmt.Sprintf("Failed to read body from %s: %v", absURL, err))
 		return err
 	}
 
-	// Log file size and saving path
 	size := int64(len(body))
 	logSize(size)
 	logSaving(localPath)
@@ -156,7 +173,7 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 	}
 
 	if m.Convert && strings.Contains(contentType, "text/html") {
-		convertedBody, err := m.convertLinks(body, url, localPath)
+		convertedBody, err := m.convertLinks(body, u, localPath)
 		if err != nil {
 			logError(fmt.Sprintf("Failed to convert links in %s: %v", localPath, err))
 		} else {
@@ -167,13 +184,13 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 		}
 	}
 
-	// Extract links if HTML
 	if strings.Contains(contentType, "text/html") {
 		doc, err := html.Parse(strings.NewReader(string(body)))
 		if err != nil {
 			logError(fmt.Sprintf("Failed to parse HTML from %s: %v", absURL, err))
 			return err
 		}
+
 		seen := []string{}
 		var extract func(*html.Node)
 		extract = func(n *html.Node) {
@@ -185,52 +202,50 @@ func (m *FlagsComponents) crawl(absURL string, depth int) error {
 						if attr.Key == key {
 							switch key {
 							case "style":
-								seen = append(seen, m.extractCSSLinks([]byte(attr.Val), url)...)
+								seen = append(seen, m.extractCSSLinks([]byte(attr.Val), u)...)
 							default:
-								seen = append(seen, makeAbsoluteURL(attr.Val, url))
+								seen = append(seen, makeAbsoluteURL(attr.Val, u))
 							}
 						}
 					}
 				}
-
 			case html.TextNode:
 				if n.Data != "" {
-					urls, _ := m.extractURLsFromCSS(n.Data, url)
+					urls, _ := m.extractURLsFromCSS(n.Data, u)
 					seen = append(seen, urls...)
 				}
 			}
-
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				extract(c)
 			}
 		}
 		extract(doc)
 
-		// Download found links
 		var wg sync.WaitGroup
 		for _, link := range seen {
 			wg.Add(1)
-			go func(url string) {
+			go func(link string) {
 				defer wg.Done()
-				_ = m.crawl(url, depth+1)
+				_ = m.crawl(link, depth+1)
 			}(link)
 		}
 		wg.Wait()
 	}
 
-	// Parse CSS files
 	if strings.Contains(contentType, "css") {
-		links := m.extractCSSLinks(body, url)
+		links := m.extractCSSLinks(body, u)
 		var wg sync.WaitGroup
 		for _, link := range links {
 			wg.Add(1)
-			go func(url string) {
+			go func(link string) {
 				defer wg.Done()
-				_ = m.crawl(url, depth+1)
+				_ = m.crawl(link, depth+1)
 			}(link)
 		}
 		wg.Wait()
 	}
+
+	logFinish(absURL)
 	return nil
 }
 
@@ -246,7 +261,7 @@ func (m *FlagsComponents) extractCSSLinks(css []byte, baseURL *url.URL) []string
 	return urls
 }
 
-// GetLocalPath: save all domains under BaseDir as subfolders
+// GetLocalPath saves all domains under BaseDir as subfolders
 func (m *FlagsComponents) GetLocalPath(u *url.URL, contentType string) (string, error) {
 	path := u.Path
 	if path == "" || strings.HasSuffix(path, "/") {
@@ -281,16 +296,11 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 		return nil, err
 	}
 
-	// Helper to recursively walk nodes and rewrite URLs
 	var rewrite func(*html.Node)
-
 	rewrite = func(n *html.Node) {
 		switch n.Type {
-
 		case html.ElementNode:
-			// Attributes that can contain URLs
 			attrsToCheck := []string{"href", "src", "poster", "data-src", "action", "style"}
-
 			for i, attr := range n.Attr {
 				for _, key := range attrsToCheck {
 					if attr.Key == key {
@@ -303,14 +313,11 @@ func (m *FlagsComponents) convertLinks(htmlContent []byte, pageURL *url.URL, loc
 					}
 				}
 			}
-
 		case html.TextNode:
 			if n.Data != "" {
 				_, n.Data = m.convertURLsFromCSS(n.Data, pageURL)
 			}
 		}
-
-		// Recursively process children
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			rewrite(c)
 		}
@@ -334,7 +341,6 @@ func (m *FlagsComponents) extractURLsFromCSS(cssContent string, pageURL *url.URL
 			if len(match) >= 2 {
 				old := strings.TrimSpace(match[1])
 				url := makeAbsoluteURL(old, pageURL)
-				// url := old
 				cssContent = strings.Replace(cssContent, old, url, 1)
 				if url != "" {
 					urls = append(urls, url)
@@ -353,8 +359,6 @@ func (m *FlagsComponents) convertURLsFromCSS(cssContent string, pageURL *url.URL
 		for _, match := range matches {
 			if len(match) >= 2 {
 				url := strings.TrimPrefix(strings.TrimSpace(match[1]), "/")
-				// url := makeAbsoluteURL(old, pageURL)
-				// url := old
 				cssContent = strings.Replace(cssContent, strings.TrimSpace(match[1]), url, 1)
 				if url != "" {
 					urls = append(urls, url)
@@ -374,4 +378,123 @@ func makeAbsoluteURL(linkURL string, base_url *url.URL) string {
 
 	absolute := base_url.ResolveReference(link)
 	return absolute.String()
+}
+
+// -------------------- wget-style logging functions --------------------
+
+var (
+	Stdout io.Writer = os.Stdout
+	Stderr io.Writer = os.Stderr
+)
+
+func logStart() {
+	t := time.Now().Format("2006-01-02 15:04:05")
+	fmt.Fprintf(Stdout, "start at %s\n", t)
+}
+
+func logRequest(status string) {
+	fmt.Fprintf(Stdout, "sending request, awaiting response... status %s\n", status)
+}
+
+func logSize(size int64) {
+	human := humanSize(float64(size))
+	fmt.Fprintf(Stdout, "content size: %d [~%s]\n", size, human)
+}
+
+func logSaving(path string) {
+	fmt.Fprintf(Stdout, "saving file to: %s\n", path)
+}
+
+func logProgress(downloaded, total int64, speed float64, elapsed time.Duration) {
+	dl := humanBytes(float64(downloaded))
+	tot := humanBytes(float64(total))
+	percent := 0.0
+	if total > 0 {
+		percent = float64(downloaded) / float64(total) * 100
+	}
+	remaining := ""
+	if speed > 0 && downloaded < total {
+		secs := float64(total-downloaded) / speed
+		remaining = fmt.Sprintf("%.0fs", secs)
+	} else {
+		remaining = "0s"
+	}
+
+	barLen := 60
+	filled := int(float64(barLen) * percent / 100)
+	bar := ""
+	for i := 0; i < barLen; i++ {
+		if i < filled {
+			bar += "="
+		} else {
+			bar += " "
+		}
+	}
+
+	speedStr := humanBytes(speed) + "/s"
+	fmt.Fprintf(Stdout, "\r%s / %s [%s] %.2f%% %s %s",
+		dl, tot, bar, percent, speedStr, remaining)
+}
+
+func logFinish(url string) {
+	t := time.Now().Format("2006-01-02 15:04:05")
+	fmt.Fprintf(Stdout, "\n\nDownloaded [%s]\n", url)
+	fmt.Fprintf(Stdout, "finished at %s\n", t)
+}
+
+func logBackground() {
+	fmt.Fprintf(Stdout, "Output will be written to \"wget-log\".\n")
+}
+
+func logError(msg string) {
+	fmt.Fprintf(Stderr, "ERROR: %s\n", msg)
+}
+
+func openLogFile() (*os.File, error) {
+	return os.OpenFile("wget-log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+}
+
+// Utility functions for human-readable sizes
+func humanSize(bytes float64) string {
+	switch {
+	case bytes >= 1<<30:
+		return fmt.Sprintf("%.2fGB", bytes/(1<<30))
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.2fMB", bytes/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.2fKB", bytes/(1<<10))
+	default:
+		return fmt.Sprintf("%.0fB", bytes)
+	}
+}
+
+func humanBytes(bytes float64) string {
+	switch {
+	case bytes >= 1<<20:
+		return fmt.Sprintf("%.2fMiB", bytes/(1<<20))
+	case bytes >= 1<<10:
+		return fmt.Sprintf("%.2fKiB", bytes/(1<<10))
+	default:
+		return fmt.Sprintf("%.0fB", bytes)
+	}
+}
+
+// ProgressReader wraps io.Reader to track progress and log it
+type ProgressReader struct {
+	Reader     io.Reader
+	Total      int64
+	Downloaded int64
+	URL        string
+	Start      time.Time
+}
+
+func (p *ProgressReader) Read(buf []byte) (int, error) {
+	n, err := p.Reader.Read(buf)
+	if n > 0 {
+		p.Downloaded += int64(n)
+		elapsed := time.Since(p.Start)
+		speed := float64(p.Downloaded) / elapsed.Seconds()
+		logProgress(p.Downloaded, p.Total, speed, elapsed)
+	}
+	return n, err
 }
