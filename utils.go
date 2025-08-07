@@ -41,8 +41,10 @@ func CatchOutputFile(args []string, comp *FlagsComponents, flags []string) (bool
 }
 
 func CatchInput(args []string, comp *FlagsComponents, flags []string) (bool, error) {
+	// fmt.Println(args)
 	if strings.Contains(args[0], "=") {
 		sli := strings.Split(args[0], "=")
+		fmt.Println(sli, args[0])
 		if !CheckValidFlag(sli[0], flags) {
 			return false, errors.New("invalid flag -i")
 		}

@@ -11,11 +11,11 @@ import (
 	"sync"
 )
 
-func HandleMultipleDownloads(filePath string) {
+func HandleMultipleDownloads(filePath string) error{
 	file, err := os.Open(filePath)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to open URL list:", err)
-		return
+		// fmt.Fprintln(os.Stderr, "Failed to open URL list:", err)
+		return fmt.Errorf("%s",err)
 	}
 	defer file.Close()
 
@@ -43,21 +43,23 @@ func HandleMultipleDownloads(filePath string) {
 	var wg sync.WaitGroup
 	for _, link := range urls {
 		wg.Add(1)
-		go func(l string) {
+		go func(l string) error {
 			defer wg.Done()
 			err := DownloadFile(l, "")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", l, err)
-				return
+				// fmt.Fprintf(os.Stderr, "Error downloading %s: %v\n", l, err)
+				return fmt.Errorf("%s",err)
 			}
 			parts := strings.Split(l, "/")
 			fmt.Println("finished", parts[len(parts)-1])
+			return nil
 		}(link)
 	}
 	wg.Wait()
 
 	fmt.Println()
 	fmt.Println("Download finished: ", urls)
+	return nil
 }
 
 func DownloadFile(url, outputPath string) error {

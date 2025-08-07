@@ -36,6 +36,10 @@ func DownloadFiles(args *FlagsComponents) error {
 		// logger.Printf("start at %s", time.Now().Format("2006-01-02 15:04:05"))
 	} else if args.InputFile != "" {
 		// Batch download from file
+		err := HandleMultipleDownloads(args.InputFile)
+		if err != nil {
+			return err
+		}
 		// return args.executeBatchDownload(logger)
 	} else if args.isMirror {
 		fmt.Println("+++++++++++++++++aaaaaaaaaaaaaa+++++++++++++", args)
@@ -54,7 +58,7 @@ func DownloadFiles(args *FlagsComponents) error {
 				logFinish(link)
 			}
 		}
-		return nil
+		// return nil
 	} else {
 		// Single file download
 		return DownloadOneSource(args, logger)
