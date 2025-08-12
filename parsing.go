@@ -7,7 +7,7 @@ import (
 )
 
 func parsing(args []string, components *FlagsComponents) error {
-	flags := []string{"-O", "-B", "-P", "--limit-rate", "--mirror", "-R", "--reject", "-X", "--exclude", "--convert-links", "-i"}
+	flags := []string{"-O", "-B", "-P", "--rate-limit", "--mirror", "-R", "--reject", "-X", "--exclude", "--convert-links", "-i"}
 
 	i := 0
 	for i < len(args) {
@@ -38,7 +38,7 @@ func parsing(args []string, components *FlagsComponents) error {
 				i += 2
 				continue
 			}
-		} else if strings.HasPrefix(args[i], "--limit-rate") && i <= len(args)-2 {
+		} else if strings.HasPrefix(args[i], "--rate-limit") && i <= len(args)-2 {
 			checker, err := CatchRate(args[i:i+2], components, flags)
 			if err != nil {
 				return err

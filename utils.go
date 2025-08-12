@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -334,15 +335,16 @@ func formatETA(d time.Duration) string {
 		return "0s"
 	}
 
-	hours := int(d.Hours())
-	minutes := int(d.Minutes()) % 60
-	seconds := int(d.Seconds()) % 60
+	totalSeconds := d.Seconds()
+	hours := totalSeconds / 3600
+	minutes := math.Mod(totalSeconds, 3600) / 60
+	seconds := math.Mod(totalSeconds, 3600)
 
-	if hours > 0 {
-		return fmt.Sprintf("%dh%02dm", hours, minutes)
-	} else if minutes > 0 {
-		return fmt.Sprintf("%dm%02ds", minutes, seconds)
+	if hours >= 1 {
+		return fmt.Sprintf("%.0fh%.0fm", hours, minutes)
+	} else if minutes >= 1 {
+		return fmt.Sprintf("%.0fm%.0fs", minutes, seconds)
 	} else {
-		return fmt.Sprintf("%ds", seconds)
+		return fmt.Sprintf("%.2fs", seconds)
 	}
 }

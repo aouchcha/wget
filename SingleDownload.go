@@ -31,6 +31,7 @@ func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
 				}
 				filename = strings.ReplaceAll(filename, "~", homeDir)
 			}
+			
 			if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 				return fmt.Errorf("failed to create directory: %v", err)
 			}
@@ -168,7 +169,7 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 				return written, io.ErrShortWrite
 			}
 			now := time.Now()
-			//here
+			// here
 			if now.Sub(lastUpdate) > 10*time.Millisecond || err == io.EOF {
 				showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
 				lastUpdate = now
@@ -192,15 +193,13 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 }
 
 func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool, Link string) {
-	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
-	// Create progress bar similar to wget
-	barWidth := 80 // Reduced width to fit better
+	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024) // MB/s
+	barWidth := 80
 	var progressBar string
 
 	if total > 0 {
 		percentage := float64(downloaded) / float64(total) * 100
 		filled := int(percentage / 100 * float64(barWidth))
-
 		progressBar = strings.Repeat("=", filled)
 		if filled < barWidth {
 			progressBar += ">"
@@ -217,15 +216,25 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 	} else {
 		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024))
 	}
+
 	if background {
 		remaining := total - downloaded
-		remainingStr := formatETA(time.Duration(float64(remaining)/speed) * 10)
-		logOrPrint(logger, background, fmt.Sprintf("%dK %s %.0f%% %s %s", downloaded, strings.ReplaceAll(progressBar, "=", "."), float64(downloaded*100)/float64(total), formatSpeed(speed), remainingStr))
+		remainSeconds := float64(remaining) / (speed * 1024 * 1024) // Convert MB/s to bytes/s
+		remainDuration := time.Duration(remainSeconds * float64(time.Second))
+		remainingStr := formatETA(remainDuration)
+
+		logOrPrint(logger, background, fmt.Sprintf("%dK %s %.0f%% %s %s", downloaded/1024, strings.ReplaceAll(progressBar, "=", "."), float64(downloaded*100)/float64(total), formatSpeed(speed), remainingStr))
 	} else {
-		logOrPrint(logger, background, fmt.Sprintf("\r%s %.0f%% [%s] %s %s", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
+		logOrPrint(logger, background, fmt.Sprintf("\r\033[K%s %.0f%% [%s] %s %s ", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
 	}
+
 	if total > 0 && downloaded >= total {
 		logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
+	} else if total > 0 && downloaded < total && speed > 0 {
+		remainSeconds := float64(total-downloaded) / (speed * 1024 * 1024)
+		remainDuration := time.Duration(remainSeconds * float64(time.Second))
+		logOrPrint(logger, background, fmt.Sprintf(" at %s", formatETA(remainDuration)))
 	}
-	os.Stdout.Sync()
+	// os.Stdout.Sync()
 }
+
