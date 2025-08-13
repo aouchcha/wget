@@ -88,7 +88,7 @@ func parsing(args []string, components *FlagsComponents) error {
 			if strings.HasPrefix(args[i], "http") {
 				components.Links = append(components.Links, args[i])
 			} else {
-				components.Links = append(components.Links, fmt.Sprintf("http://%s/", args[i]))
+				components.Links = append(components.Links, fmt.Sprintf("https://%s", args[i]))
 			}
 		}
 		i += 1

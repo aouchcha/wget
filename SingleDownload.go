@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -13,7 +12,7 @@ import (
 	"time"
 )
 
-func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
+func DownloadOneSource(c *FlagsComponents) error {
 	for _, link := range c.Links {
 		filename := c.OutputFile
 		Overide := true
@@ -31,13 +30,13 @@ func DownloadOneSource(c *FlagsComponents, logger *log.Logger) error {
 				}
 				filename = strings.ReplaceAll(filename, "~", homeDir)
 			}
-			
+
 			if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
 				return fmt.Errorf("failed to create directory: %v", err)
 			}
 		}
 
-		err := Download(link, c, filename, logger, Overide)
+		err := Download(link, c, filename, Overide)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			continue
@@ -57,11 +56,9 @@ func GetOutputFromUrl(Link string) string {
 	return filename
 }
 
-func Download(Link string, c *FlagsComponents, filename string, logger *log.Logger, Overide bool) error {
-	// Print timestamp and URL
-	logOrPrint(logger, c.Background, fmt.Sprintf("--%s--  %s\n", time.Now().Format("2006-01-02 15:04:05"), Link))
+func Download(Link string, c *FlagsComponents, filename string, Overide bool) error {
+	logOrPrint(fmt.Sprintf("--%s--  %s\n", time.Now().Format("2006-01-02 15:04:05"), Link))
 
-	// Parse URL to get host
 	url, err := url.Parse(Link)
 	if err != nil {
 		return fmt.Errorf("failed to parse URL: %v", err)
@@ -72,7 +69,7 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 	ips, err := net.LookupIP(url.Host)
 	if err != nil {
-		logOrPrint(logger, c.Background, "DNS resolution failed")
+		logOrPrint("DNS resolution failed")
 		return fmt.Errorf("failed to resolve hostname: %v", err)
 	}
 	// Print all the ips
@@ -81,18 +78,18 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 		IpsTotal = append(IpsTotal, ip.String())
 	}
 	IpStr := strings.Join(IpsTotal, ", ")
-	logOrPrint(logger, c.Background, fmt.Sprintf("Resolving %s (%s)... %s\n", url.Host, url.Host, IpStr))
+	logOrPrint(fmt.Sprintf("Resolving %s (%s)... %s\n", url.Host, url.Host, IpStr))
 	port := "80"
 	if url.Scheme == "https" {
 		port = "443"
 	}
-	logOrPrint(logger, c.Background, fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
+	logOrPrint(fmt.Sprintf("Connecting to %s (%s)|%s|:%s...", url.Host, url.Host, ips[0].String(), port))
 
 	startTime := time.Now()
 	defer response.Body.Close()
 
-	logOrPrint(logger, c.Background, " connected.\n")
-	logOrPrint(logger, c.Background, fmt.Sprintf("HTTP request sent, awaiting response... %s\n", response.Status))
+	logOrPrint(" connected.\n")
+	logOrPrint(fmt.Sprintf("HTTP request sent, awaiting response... %s\n", response.Status))
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("--%s--  Error %d: %s", time.Now().Format("2006-01-02 15:04:05"), response.StatusCode, response.Status)
 	}
@@ -104,10 +101,17 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 		contentType = "application/octet-stream"
 	}
 
-	if fileSize > 0 {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Length: %d [%s]\n", fileSize, contentType))
+	var t string
+	if fileSize/(1024*1024) > 1 {
+		t = fmt.Sprintf("%.2fM", float64(fileSize)/(1024*1024))
 	} else {
-		logOrPrint(logger, c.Background, fmt.Sprintf("Length: unspecified [%s]\n", contentType))
+		t = fmt.Sprintf("%.2fK", float64(fileSize)/(1024))
+	}
+
+	if fileSize > 0 {
+		logOrPrint(fmt.Sprintf("Length: %d (%s) [%s]\n", fileSize, t, contentType))
+	} else {
+		logOrPrint(fmt.Sprintf("Length: unspecified [%s]\n", contentType))
 	}
 
 	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
@@ -120,16 +124,16 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	}
 	defer OutputFile.Close()
 
-	logOrPrint(logger, c.Background, fmt.Sprintf("Saving to: '%s'\n", filepath.Base(filename)))
+	logOrPrint(fmt.Sprintf("Saving to: '%s'\n", filepath.Base(filename)))
 	rate, err := parseRateLimit(c.RateLimite)
 	if err != nil {
 		return err
 	}
 	var downloaded int64
 	if rate > 0 {
-		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, logger, c.Background, Link)
+		downloaded, err = copyWithRateLimit(response.Body, OutputFile, rate, fileSize, filename, Link)
 	} else {
-		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), logger, c.Background, Link)
+		downloaded, err = copyWithProgress(response.Body, OutputFile, fileSize, filepath.Base(filename), Link)
 	}
 
 	if err != nil {
@@ -139,16 +143,17 @@ func Download(Link string, c *FlagsComponents, filename string, logger *log.Logg
 	duration := time.Since(startTime)
 	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024) // MB/s
 
-	logOrPrint(logger, c.Background, fmt.Sprintf("%s (%s) - '%s' saved [%d]\n",
+	logOrPrint(fmt.Sprintf("%s (%s) - '%s' saved [%d/%d]\n",
 		time.Now().Format("2006-01-02 15:04:05"),
 		formatSpeed(speed),
 		filepath.Base(filename),
-		downloaded))
+		downloaded,
+		fileSize))
 
 	return nil
 }
 
-func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, logger *log.Logger, background bool, Link string) (int64, error) {
+func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string, Link string) (int64, error) {
 	var written int64
 	buf := make([]byte, 32*1024)
 
@@ -170,8 +175,8 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 			}
 			now := time.Now()
 			// here
-			if now.Sub(lastUpdate) > 10*time.Millisecond || err == io.EOF {
-				showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
+			if now.Sub(lastUpdate) > 100*time.Millisecond || err == io.EOF {
+				showProgress(written, total, filename, time.Since(startTime))
 				lastUpdate = now
 			}
 		}
@@ -184,16 +189,15 @@ func copyWithProgress(src io.Reader, dst io.Writer, total int64, filename string
 		}
 	}
 
-	// Final progress update
-	if !background {
-		showProgress(written, total, filename, time.Since(startTime), logger, background, Link)
-	}
+	// if !background {
+	showProgress(written, total, filename, time.Since(startTime))
+	// }
 	fmt.Println()
 	return written, nil
 }
 
-func showProgress(downloaded, total int64, filename string, duration time.Duration, logger *log.Logger, background bool, Link string) {
-	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024) // MB/s
+func showProgress(downloaded, total int64, filename string, duration time.Duration) {
+	speed := float64(downloaded) / duration.Seconds() / (1024 * 1024)
 	barWidth := 80
 	var progressBar string
 
@@ -217,24 +221,13 @@ func showProgress(downloaded, total int64, filename string, duration time.Durati
 		filesize = fmt.Sprintf("%.2fK", float64(downloaded)/(1024))
 	}
 
-	if background {
-		remaining := total - downloaded
-		remainSeconds := float64(remaining) / (speed * 1024 * 1024) // Convert MB/s to bytes/s
-		remainDuration := time.Duration(remainSeconds * float64(time.Second))
-		remainingStr := formatETA(remainDuration)
-
-		logOrPrint(logger, background, fmt.Sprintf("%dK %s %.0f%% %s %s", downloaded/1024, strings.ReplaceAll(progressBar, "=", "."), float64(downloaded*100)/float64(total), formatSpeed(speed), remainingStr))
-	} else {
-		logOrPrint(logger, background, fmt.Sprintf("\r\033[K%s %.0f%% [%s] %s %s ", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
-	}
+	logOrPrint(fmt.Sprintf("\r\033[K%s %.0f%% [%s] %s %s ", filename, float64(downloaded*100)/float64(total), progressBar, filesize, formatSpeed(speed)))
 
 	if total > 0 && downloaded >= total {
-		logOrPrint(logger, background, fmt.Sprintf(" in %.2fs", duration.Seconds()))
+		logOrPrint(fmt.Sprintf(" in %.2fs", duration.Seconds()))
 	} else if total > 0 && downloaded < total && speed > 0 {
 		remainSeconds := float64(total-downloaded) / (speed * 1024 * 1024)
 		remainDuration := time.Duration(remainSeconds * float64(time.Second))
-		logOrPrint(logger, background, fmt.Sprintf(" at %s", formatETA(remainDuration)))
+		logOrPrint(fmt.Sprintf(" at %s", formatETA(remainDuration)))
 	}
-	// os.Stdout.Sync()
 }
-

@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"math"
 	"os"
 	"path/filepath"
@@ -119,49 +118,48 @@ func CatchRate(args []string, comp *FlagsComponents, flags []string) (bool, erro
 }
 
 func CatchTheRejectedSuffix(args []string, comp *FlagsComponents, flags []string) (bool, error) {
-    if !comp.isMirror {
-        return false, errors.New("flag --mirror is missing")
-    }
-    var rejectEx string
-    var checker bool
+	if !comp.isMirror {
+		return false, errors.New("flag --mirror is missing")
+	}
+	var rejectEx string
+	var checker bool
 
-    if strings.Contains(args[0], "=") {
-        sli := strings.Split(args[0], "=")
-        if !CheckValidFlag(sli[0], flags) {
-            return false, errors.New("invalid flag -R || --reject")
-        }
-        if len(sli) != 2 || sli[1] == "" {
-            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
-        }
-        rejectEx = sli[1]
-        checker = false
+	if strings.Contains(args[0], "=") {
+		sli := strings.Split(args[0], "=")
+		if !CheckValidFlag(sli[0], flags) {
+			return false, errors.New("invalid flag -R || --reject")
+		}
+		if len(sli) != 2 || sli[1] == "" {
+			return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+		}
+		rejectEx = sli[1]
+		checker = false
 
-    } else {
-        if !CheckValidFlag(args[0], flags) {
-            return false, errors.New("invalid flag -R || --reject")
-        }
-        if args[1] == "" || strings.HasPrefix(args[1], "http") {
-            return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
-        }
-        rejectEx = args[1]
-        checker = true
-    }
+	} else {
+		if !CheckValidFlag(args[0], flags) {
+			return false, errors.New("invalid flag -R || --reject")
+		}
+		if args[1] == "" || strings.HasPrefix(args[1], "http") {
+			return false, errors.New("missing rejected extensions while presence of the -R || --reject flag")
+		}
+		rejectEx = args[1]
+		checker = true
+	}
 
-    // Split and normalize: remove quotes, spaces, and leading '*' from each suffix
-    rawList := strings.Split(rejectEx, ",")
-    normalized := make([]string, 0, len(rawList))
-    for _, r := range rawList {
-        r = strings.TrimSpace(r)
-        r = strings.Trim(r, `"'`)           // remove quotes if any
-        r = strings.TrimPrefix(r, "*")      // remove leading '*'
-        r = strings.ToLower(r)              // normalize case
-        normalized = append(normalized, r)
-    }
-    comp.Reject = normalized
+	// Split and normalize: remove quotes, spaces, and leading '*' from each suffix
+	rawList := strings.Split(rejectEx, ",")
+	normalized := make([]string, 0, len(rawList))
+	for _, r := range rawList {
+		r = strings.TrimSpace(r)
+		r = strings.Trim(r, `"'`)      // remove quotes if any
+		r = strings.TrimPrefix(r, "*") // remove leading '*'
+		r = strings.ToLower(r)         // normalize case
+		normalized = append(normalized, r)
+	}
+	comp.Reject = normalized
 
-    return checker, nil
+	return checker, nil
 }
-
 
 func CatchTheRExcludedFolders(args []string, comp *FlagsComponents, flags []string) (bool, error) {
 	if !comp.isMirror {
@@ -210,7 +208,6 @@ func CatchTheRExcludedFolders(args []string, comp *FlagsComponents, flags []stri
 	return checker, nil
 }
 
-
 func (c *FlagsComponents) Validate() error {
 	// Check for conflicting flags
 	if c.InputFile != "" && len(c.Links) != 0 {
@@ -238,12 +235,8 @@ func (c *FlagsComponents) Validate() error {
 	return nil
 }
 
-func logOrPrint(logger *log.Logger, background bool, message string) {
-	if background {
-		logger.Printf("%s", message)
-	} else {
-		fmt.Printf("%s", message)
-	}
+func logOrPrint(message string) {
+	fmt.Printf("%s", message)
 }
 
 func parseRateLimit(rateLimitStr string) (int64, error) {
@@ -345,6 +338,6 @@ func formatETA(d time.Duration) string {
 	} else if minutes >= 1 {
 		return fmt.Sprintf("%.0fm%.0fs", minutes, seconds)
 	} else {
-		return fmt.Sprintf("%.2fs", seconds)
+		return fmt.Sprintf("%.1fs", seconds)
 	}
 }

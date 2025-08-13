@@ -64,7 +64,7 @@ go run . [OPTIONS] URL
 | `-O FILE`             | Write output to `FILE`                                  |
 | `-P DIR`              | Save files to directory `DIR`                           |
 | `-i FILE`             | Download URLs listed in `FILE`                          |
-| `--limit-rate=RATE`   | Limit download speed (e.g., `500k`, `2m`)               |
+| `--rate-limit=RATE`   | Limit download speed (e.g., `500k`, `2m`)               |
 | `--mirror`            | Enable recursive mirroring                              |
 | `-R`, `--reject=LIST` | Reject files with given extensions (comma-separated)    |
 | `-X`, `--exclude=LIST`| Exclude folders (comma-separated, e.g., `/admin/`)      |
@@ -79,6 +79,3 @@ Requires Go 1.23 or later.
 go build -o wget
 ```
 
-## License
-
-Zone01

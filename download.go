@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 )
 
@@ -9,7 +8,7 @@ func DownloadFiles(args *FlagsComponents) error {
 	if err := args.Validate(); err != nil {
 		return err
 	}
-	var logger *log.Logger
+	// var logger *log.Logger
 	if args.Background {
 		for _, Link := range args.Links {
 			err := HandleBackgroundDownload(Link)
@@ -41,7 +40,7 @@ func DownloadFiles(args *FlagsComponents) error {
 		}
 	} else {
 		// Single file download
-		return DownloadOneSource(args, logger)
+		return DownloadOneSource(args)
 	}
 	return nil
 }
