@@ -93,11 +93,14 @@ go-wget --mirror --convert-links https://example.com
 ## ❤️ Contributing
 
 PRs are welcome! Feel free to open issues or suggest features.
-https://github.com/2001basta
-https://github.com/aouchcha
-https://github.com/ABouziani
-https://github.com/x3alone
 ---
 
 ## contributors
+https://github.com/2001basta
+
+https://github.com/aouchcha
+
+https://github.com/ABouziani
+
+https://github.com/x3alone
 
